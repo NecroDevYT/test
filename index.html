@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plants vs. Zombies - Nivel 1</title>
+    <style>
+        body {
+            background-color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            /* Tamaño visual ajustado a la pantalla, manteniendo aspect ratio */
+            max-width: 100%;
+            max-height: 100vh;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas" width="1636" height="1332"></canvas>
+
+<script>
+    // --- CONFIGURACIÓN ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Datos de juego iniciales
+    let sunAmount = 50; // Cantidad inicial de sol (ejemplo)
+    
+    // Configuración de la Grid
+    const GRID_START_X = 90;
+    const GRID_START_Y = 280;
+    const GRID_END_X = 1577;
+    const GRID_END_Y = 1260;
+    const COLS = 9;
+    const ROWS = 5;
+    
+    // Cálculo de tamaño de celda
+    const CELL_WIDTH = (GRID_END_X - GRID_START_X) / COLS;
+    const CELL_HEIGHT = (GRID_END_Y - GRID_START_Y) / ROWS;
+
+    // Configuración de Semillas
+    // Definimos las plantas disponibles para este nivel
+    const seeds = [
+        { name: 'girasol', img: 'semilla de girasol.png', cost: 50 },
+        { name: 'lanzaguisantes', img: 'semilla de lanza guisantes.png', cost: 100 },
+        { name: 'nuez', img: 'semilla de nuez.png', cost: 50 }
+    ];
+
+    // --- CARGADOR DE RECURSOS ---
+    const assets = {};
+    const imageSources = {
+        background: 'recursos/background.png',
+        barraSemillas: 'recursos/barra de semillas.png',
+        pala: 'recursos/pala.png',
+        solUI: 'recursos/sol.png', // Imagen estática para la UI
+        envoltura: 'recursos/envoltura de semilla.png',
+        cortacesped: 'recursos/cortacesped.png',
+        // Imágenes de semillas específicas
+        seed_girasol: 'recursos/semilla de girasol.png',
+        seed_lanzaguisantes: 'recursos/semilla de lanza guisantes.png',
+        seed_nuez: 'recursos/semilla de nuez.png'
+    };
+
+    let assetsLoaded = 0;
+    const totalAssets = Object.keys(imageSources).length;
+
+    function loadImages(callback) {
+        for (let key in imageSources) {
+            const img = new Image();
+            img.src = imageSources[key];
+            img.onload = () => {
+                assets[key] = img;
+                assetsLoaded++;
+                if (assetsLoaded === totalAssets) {
+                    callback();
+                }
+            };
+        }
+    }
+
+    // --- DIBUJADO ---
+
+    function drawGrid() {
+        ctx.strokeStyle = 'red';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        // Líneas Verticales
+        for (let i = 0; i <= COLS; i++) {
+            const x = GRID_START_X + (i * CELL_WIDTH);
+            ctx.moveTo(x, GRID_START_Y);
+            ctx.lineTo(x, GRID_END_Y);
+        }
+
+        // Líneas Horizontales
+        for (let i = 0; i <= ROWS; i++) {
+            const y = GRID_START_Y + (i * CELL_HEIGHT);
+            ctx.moveTo(GRID_START_X, y);
+            ctx.lineTo(GRID_END_X, y);
+        }
+
+        ctx.stroke();
+    }
+
+    function drawUI() {
+        // 1. Background (0,0)
+        ctx.drawImage(assets.background, 0, 0);
+
+        // 2. Barra de Semillas (10, 10)
+        ctx.drawImage(assets.barraSemillas, 10, 10);
+
+        // 3. Sección Sol (Rango 10 - 200)
+        // Imagen Sol: Posición Y = 0. Centrado en rango X (aprox).
+        // Centro del rango 10-200 es 105.
+        // Dibujamos la imagen centrada en ese rango o alineada según convenga.
+        // Instrucción: "Las imagenes de 'sol' y 'pala'... tendrán una posición en 'y' de 0"
+        const sunRangeCenter = 10 + (190 / 2);
+        const sunImgX = sunRangeCenter - (assets.solUI.width / 2);
+        ctx.drawImage(assets.solUI, sunImgX, 0);
+
+        // Texto Sol: Fuente 40, Y = 195
+        ctx.fillStyle = 'black'; 
+        ctx.font = 'bold 40px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(sunAmount, sunRangeCenter, 195);
+
+        // 4. Sección Pala (Rango 1110 - 1237)
+        // Imagen Pala: Posición Y = 0.
+        const shovelRangeCenter = 1110 + (127 / 2);
+        const shovelX = shovelRangeCenter - (assets.pala.width / 2);
+        ctx.drawImage(assets.pala, shovelX, 0);
+
+        // 5. Semillas (Rango 200 - 1110)
+        // Apiladas a la izquierda (startX = 200).
+        let currentX = 200;
+
+        seeds.forEach(seed => {
+            // Dibujar Envoltura
+            // Instrucción: Altura (Y) de 20.
+            // Nota: Usamos el ancho natural de la envoltura para calcular la siguiente posición
+            const wrapperWidth = assets.envoltura.width;
+            
+            ctx.drawImage(assets.envoltura, currentX, 20);
+
+            // Dibujar Imagen de la Semilla
+            // Instrucción: Altura (Y) de 0.
+            // El rango X es el ancho de la envoltura. Centramos la planta en la envoltura.
+            const plantImg = assets['seed_' + seed.name];
+            // Centrado horizontalmente dentro de la envoltura
+            const plantX = currentX + (wrapperWidth - plantImg.width) / 2;
+            ctx.drawImage(plantImg, plantX, 0);
+
+            // Dibujar Costo
+            // Instrucción: Fuente 25, Y = 183.
+            ctx.fillStyle = 'black';
+            ctx.font = 'bold 25px Arial';
+            ctx.textAlign = 'center';
+            // Texto centrado en la envoltura
+            ctx.fillText(seed.cost, currentX + (wrapperWidth / 2), 183);
+
+            // Mover X para la siguiente semilla
+            currentX += wrapperWidth; 
+        });
+    }
+
+    function drawEntities() {
+        // Cortacésped
+        // X = -70
+        // Y = Centrado en cada fila
+        const lawnmowerX = -70;
+        
+        for (let row = 0; row < ROWS; row++) {
+            // Calcular centro Y de la fila
+            const rowY = GRID_START_Y + (row * CELL_HEIGHT);
+            const centerY = rowY + (CELL_HEIGHT / 2);
+            
+            // Ajustar posición para que el centro de la imagen quede en el centro de la fila
+            // (Ajuste visual simple, asumiendo el punto de pivote en el centro o base)
+            // Dado que no tenemos hitbox aun, dibujaremos centrando la imagen verticalmente.
+            const lmY = centerY - (assets.cortacesped.height / 2); // Centrado aproximado
+            
+            ctx.drawImage(assets.cortacesped, lawnmowerX, lmY);
+        }
+    }
+
+    // --- BUCLE PRINCIPAL (Loop) ---
+    function gameLoop() {
+        // Limpiar canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Dibujar UI (Fondo y Barra son parte de la UI estática visualmente, pero Background va primero)
+        // Según instrucciones: Background en (0,0), luego UI.
+        
+        // 1. Dibujar UI Base y Fondo
+        drawUI();
+
+        // 2. Dibujar Grid (Lineas rojas)
+        drawGrid();
+
+        // 3. Dibujar Entidades Iniciales (Cortacesped)
+        drawEntities();
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    // Iniciar cuando carguen las imágenes
+    loadImages(() => {
+        console.log("Recursos cargados. Iniciando juego.");
+        gameLoop();
+    });
+
+</script>
+</body>
+</html>
