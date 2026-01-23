@@ -108,7 +108,7 @@
 
     // --- CLASES ---
 
-    class Sun {
+class Sun {
         constructor() {
             // Posición X aleatoria dentro del grid
             this.x = Math.random() * (GRID_END_X - GRID_START_X) + GRID_START_X;
@@ -117,31 +117,35 @@
             // Destino Y aleatorio dentro del grid
             this.finalY = Math.random() * (GRID_END_Y - GRID_START_Y) + GRID_START_Y;
             
-            this.speed = 2; // Velocidad de caída
+            // Aumentamos ligeramente la velocidad para asegurar que llegue al suelo
+            // antes de que termine la animación (ya que la animación dicta su vida útil).
+            this.speed = 3; 
+            
             this.frame = 0;
             this.totalFrames = assets.sunAnimation.length;
-            this.scale = 0.5; // Instrucción: Escala 0.5
-            this.isFalling = true;
+            this.scale = 0.5;
             this.markedForDeletion = false;
         }
 
         update() {
-            // 1. Lógica de Caída
-            if (this.isFalling) {
-                this.y += this.speed;
-                if (this.y >= this.finalY) {
-                    this.y = this.finalY;
-                    this.isFalling = false;
+            // 1. Animación CONSTANTE (siempre activa)
+            // Se ejecuta independientemente de si cae o está quieto
+            if (frames % 2 === 0) { // Control de 30 FPS
+                this.frame++;
+                
+                // Instrucción: Eliminar al terminar la animación
+                if (this.frame >= this.totalFrames) {
+                    this.markedForDeletion = true;
                 }
-            } else {
-                // 2. Lógica de Animación (Solo cuando está en el suelo)
-                // Ejecutar a 30 FPS. Si el juego va a 60 FPS, actualizamos cada 2 frames globales.
-                if (frames % 2 === 0) {
-                    this.frame++;
-                    // Instrucción: "Cuando el sol termine un ciclo de animación elimina el sol"
-                    if (this.frame >= this.totalFrames) {
-                        this.markedForDeletion = true;
-                    }
+            }
+
+            // 2. Lógica de Movimiento
+            // Si no ha llegado a su destino, sigue bajando
+            if (this.y < this.finalY) {
+                this.y += this.speed;
+                // Corrección final para no pasarse del suelo
+                if (this.y > this.finalY) {
+                    this.y = this.finalY;
                 }
             }
         }
@@ -149,10 +153,12 @@
         draw() {
             if (this.markedForDeletion) return;
 
-            const img = assets.sunAnimation[this.frame] || assets.sunAnimation[0];
+            // Seguridad: si el frame se pasa del array, usar el último disponible
+            const currentFrame = this.frame < this.totalFrames ? this.frame : this.totalFrames - 1;
+            const img = assets.sunAnimation[currentFrame];
             
-            // Dibujar desde el centro (Hitbox en el centro)
-            // Calculamos la posición top-left basada en el centro deseado (x, y) y la escala
+            if (!img) return; // Evitar errores si la imagen no cargó
+
             const width = img.width * this.scale;
             const height = img.height * this.scale;
             const drawX = this.x - (width / 2);
