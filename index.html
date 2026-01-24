@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plants vs. Zombies - Nivel 1 (Final Fix)</title>
+    <title>Plants vs. Zombies - Nivel 1 (Final Pulido)</title>
     <style>
         body {
             background-color: #333;
@@ -44,11 +44,13 @@
 
     // --- ESTADO DEL JUEGO ---
     let frames = 0;
+    let gameOver = false;
     let sunAmount = 150; 
     let suns = []; 
     let plants = []; 
     let zombies = [];
     let peas = [];
+    let lawnmowers = []; 
     let gridState = []; 
     let selectedSeed = null; 
 
@@ -75,12 +77,12 @@
     ];
 
     // ==========================================
-    // 2. GESTOR DE RECURSOS (SOLUCIÓN ERRORES)
+    // 2. GESTOR DE RECURSOS
     // ==========================================
     const assets = { 
         sunAnimation: [], 
         plants: { girasol: [], lg_reposo: [], lg_ataque: [], nuez: [] },
-        zombies: { walk: [], die: [] },
+        zombies: { walk: [], die: [], eat: [] },
         extras: {}
     };
     
@@ -92,12 +94,12 @@
         envoltura: 'recursos/envoltura de semilla.png',
         cortacesped: 'recursos/cortacesped.png',
         guisante: 'recursos/guisante.png',
+        gameOver: 'recursos/tu pierdes.png',
         seed_girasol: 'recursos/semilla de girasol.png',
         seed_lanzaguisantes: 'recursos/semilla de lanza guisantes.png',
         seed_nuez: 'recursos/semilla de nuez.png'
     };
 
-    // Función auxiliar: digits indica cuántos ceros usar (2 para "00", 3 para "000")
     const addAnim = (prefix, start, end, digits, pathFn) => {
         for (let i = start; i <= end; i++) {
             const idx = String(i).padStart(digits, '0');
@@ -105,50 +107,31 @@
         }
     };
 
-    // --- CARGA CORRECTA DE ANIMACIONES ---
-    
-    // 1. Sol (Tiene 3 dígitos: sol000.png)
+    // Carga de animaciones
     addAnim('sol_anim', 0, 191, 3, i => `recursos/sol/sol${i}.png`);
-    
-    // 2. Girasol (Tiene 2 dígitos: girasol perturbador00.png) -> ESTO ARREGLA EL ERROR 404
     addAnim('plant_girasol', 0, 57, 2, i => `recursos/girasol perturbador/girasol perturbador${i}.png`);
-    
-    // 3. Lanzaguisantes Reposo (2 dígitos)
     addAnim('plant_lg_reposo', 0, 30, 2, i => `recursos/lg reposo perturbador/lg reposo perturbador${i}.png`);
-    
-    // 4. Lanzaguisantes Ataque (2 dígitos)
     addAnim('plant_lg_ataque', 0, 45, 2, i => `recursos/lanza guisantes ataque/lanza guisantes ataque${i}.png`);
-    
-    // 5. Zombie Caminata (2 dígitos)
     addAnim('zombie_walk', 0, 45, 2, i => `recursos/zombie caminata/zombie caminata${i}.png`);
-    
-    // 6. Zombie Muerte (2 dígitos)
     addAnim('zombie_die', 0, 49, 2, i => `recursos/zombie perdurbador cae/zombie perdurbador cae${i}.png`);
+    addAnim('zombie_eat', 0, 35, 2, i => `recursos/zombie come/zombie come${i}.png`);
 
-    // 7. Nuez (Imagen única)
     imageSources['plant_nuez_0'] = `recursos/nuez/nuez0.png`;
-
 
     let assetsLoaded = 0;
     const totalAssets = Object.keys(imageSources).length;
 
     function loadImages(callback) {
-        console.log(`Cargando ${totalAssets} recursos...`);
-        
+        console.log(`Cargando recursos...`);
         const onAssetLoad = () => {
             assetsLoaded++;
-            if (assetsLoaded === totalAssets) {
-                console.log("Carga completa. Iniciando juego.");
-                callback();
-            }
+            if (assetsLoaded === totalAssets) callback();
         };
 
         for (let key in imageSources) {
             const img = new Image();
             img.src = imageSources[key];
-            
             img.onload = () => {
-                // Clasificación de imágenes
                 if (key.startsWith('sol_anim_')) assets.sunAnimation[parseInt(key.split('_')[2])] = img;
                 else if (key.startsWith('plant_girasol_')) assets.plants.girasol[parseInt(key.split('_')[2])] = img;
                 else if (key.startsWith('plant_lg_reposo_')) assets.plants.lg_reposo[parseInt(key.split('_')[3])] = img;
@@ -156,21 +139,62 @@
                 else if (key.startsWith('plant_nuez_')) assets.plants.nuez[0] = img;
                 else if (key.startsWith('zombie_walk_')) assets.zombies.walk[parseInt(key.split('_')[2])] = img;
                 else if (key.startsWith('zombie_die_')) assets.zombies.die[parseInt(key.split('_')[2])] = img;
-                else assets.extras[key] = img; // AQUÍ SE GUARDAN LAS SEMILLAS
-                
+                else if (key.startsWith('zombie_eat_')) assets.zombies.eat[parseInt(key.split('_')[2])] = img;
+                else assets.extras[key] = img;
                 onAssetLoad();
             };
-
-            img.onerror = () => {
-                console.warn(`No se pudo cargar: ${imageSources[key]}`);
-                onAssetLoad(); // Continuar aunque falle una imagen
-            };
+            img.onerror = () => { console.warn(`Error: ${key}`); onAssetLoad(); };
         }
     }
 
     // ==========================================
     // 3. CLASES
     // ==========================================
+
+    class Lawnmower {
+        constructor(row) {
+            this.row = row;
+            // Posición inicial: -70 (borde izquierdo)
+            this.x = -70; 
+            this.y = GRID_START_Y + (row * CELL_HEIGHT) + (CELL_HEIGHT / 2) - 40; 
+            this.active = false;
+            this.speed = 15; // Muy rápido
+        }
+
+        update() {
+            if (this.active) {
+                // MODO ACTIVO: Avanzar y matar
+                this.x += this.speed;
+                
+                // Colisión letal con zombies
+                zombies.forEach(z => {
+                    if (z.row === this.row && z.action !== 'die') {
+                        // Si el zombi está cerca del cortacesped
+                        if (Math.abs(z.x - this.x) < 60) {
+                            z.takeDamage(9999); // Instakill
+                        }
+                    }
+                });
+            } else {
+                // MODO REPOSO: Esperar contacto
+                zombies.forEach(z => {
+                    // Si un zombi llega a la posición del cortacesped (aprox x < 0)
+                    if (z.row === this.row && z.x < this.x + 80 && z.action !== 'die') {
+                        this.active = true;
+                    }
+                });
+            }
+        }
+
+        draw() {
+            // Si sale de la pantalla, ya no se dibuja (pero sigue existiendo hasta que limpiemos arrays, opcional)
+            if (this.x > canvas.width) return; 
+            
+            if (assets.extras.cortacesped) {
+                ctx.drawImage(assets.extras.cortacesped, this.x, this.y);
+            }
+        }
+    }
 
     class Sun {
         constructor(x, y, isNatural = true) {
@@ -182,7 +206,6 @@
             this.totalFrames = assets.sunAnimation.length;
             this.scale = 0.5;
             this.markedForDeletion = false;
-            this.radius = 40; 
             this.isNatural = isNatural;
         }
         update() {
@@ -224,11 +247,15 @@
     class Zombie {
         constructor() {
             this.row = Math.floor(Math.random() * ROWS);
-            this.x = GRID_END_X + 50; 
+            
+            // CORRECCIÓN 2: Aparición fuera de escena
+            this.x = canvas.width + 50; 
+            
             this.y = GRID_START_Y + (this.row * CELL_HEIGHT) + (CELL_HEIGHT / 2) - 40; 
-            this.speed = 0.4;
+            this.speed = 0.6; 
             this.health = 100;
             this.scale = 0.35;
+            
             this.frame = 0;
             this.action = 'walk'; 
             this.markedForDeletion = false;
@@ -236,18 +263,54 @@
         }
 
         update() {
+            // Animación
             if (frames % this.animSpeed === 0) {
-                this.frame++;
-                if (this.action === 'walk') {
-                    if (this.frame >= assets.zombies.walk.length) this.frame = 0;
-                } else if (this.action === 'die') {
-                    if (this.frame >= assets.zombies.die.length) this.markedForDeletion = true; 
+                // CORRECCIÓN 1: Manejo estricto de animación de muerte
+                if (this.action === 'die') {
+                    if (this.frame < assets.zombies.die.length - 1) {
+                        this.frame++;
+                    } else {
+                        // Si ya terminó la animación, marcar para borrar
+                        this.markedForDeletion = true;
+                    }
+                } else {
+                    // Loop normal para walk y eat
+                    this.frame++;
+                    let maxFrames = (this.action === 'eat') ? assets.zombies.eat.length : assets.zombies.walk.length;
+                    if (this.frame >= maxFrames) this.frame = 0;
                 }
             }
 
+            // Lógica de Movimiento
             if (this.action === 'walk') {
                 this.x -= this.speed;
-                if (this.x < -100) this.markedForDeletion = true; 
+                
+                // GAME OVER
+                if (this.x < -100) { // Si pasa el cortacesped y sale de pantalla
+                   gameOver = true;
+                }
+
+                // Detectar planta
+                for (let p of plants) {
+                    if (p.row === this.row && this.x > p.x - 30 && this.x < p.x + 30) {
+                        this.action = 'eat';
+                        this.frame = 0;
+                        break;
+                    }
+                }
+            }
+            else if (this.action === 'eat') {
+                let plantExists = false;
+                for (let p of plants) {
+                    if (p.row === this.row && this.x > p.x - 30 && this.x < p.x + 30) {
+                        plantExists = true;
+                        if (frames % 20 === 0) p.health -= 5;
+                    }
+                }
+                if (!plantExists) {
+                    this.action = 'walk';
+                    this.frame = 0;
+                }
             }
         }
 
@@ -257,13 +320,19 @@
             if (this.health <= 0) {
                 this.health = 0;
                 this.action = 'die';
-                this.frame = 0; 
+                this.frame = 0; // Reiniciar para empezar animación muerte desde el principio
             }
         }
 
         draw() {
-            let imgArr = (this.action === 'walk') ? assets.zombies.walk : assets.zombies.die;
-            let img = imgArr[this.frame] || imgArr[0];
+            let imgArr;
+            if (this.action === 'walk') imgArr = assets.zombies.walk;
+            else if (this.action === 'eat') imgArr = assets.zombies.eat;
+            else imgArr = assets.zombies.die;
+
+            // Seguridad por si el frame se desincroniza
+            let img = imgArr[this.frame] || imgArr[imgArr.length - 1];
+            
             if (img) {
                 const w = img.width * this.scale;
                 const h = img.height * this.scale;
@@ -279,7 +348,9 @@
             this.row = row;
             this.x = GRID_START_X + (col * CELL_WIDTH) + (CELL_WIDTH / 2);
             this.y = GRID_START_Y + (row * CELL_HEIGHT) + (CELL_HEIGHT / 2);
-            
+            this.health = 100; 
+            this.markedForDeletion = false;
+
             if (type === 'girasol') {
                 this.scale = 0.3;
                 this.animArr = assets.plants.girasol;
@@ -291,6 +362,7 @@
                 this.isAttacking = false;
             } else {
                 this.scale = 0.3;
+                this.health = 400; 
                 this.animArr = assets.plants.nuez;
             }
 
@@ -299,6 +371,12 @@
         }
 
         update() {
+            if (this.health <= 0) {
+                this.markedForDeletion = true;
+                gridState[this.col][this.row] = null;
+                return;
+            }
+
             if (this.animArr.length > 1 && frames % this.animSpeed === 0) {
                 this.frame++;
                 
@@ -364,6 +442,8 @@
     });
 
     canvas.addEventListener('mousedown', e => {
+        if (gameOver) return;
+
         const pos = getMousePos(e);
         const mx = pos.x;
         const my = pos.y;
@@ -427,6 +507,13 @@
         }
     }
 
+    function initGame() {
+        lawnmowers = [];
+        for(let r=0; r<ROWS; r++) {
+            lawnmowers.push(new Lawnmower(r));
+        }
+    }
+
     function drawGame() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -449,7 +536,6 @@
             ctx.globalAlpha = sunAmount >= s.cost ? 1 : 0.5;
             if(assets.extras.envoltura) ctx.drawImage(assets.extras.envoltura, curX, 20);
             
-            // CORRECCIÓN: Usar assets.extras para buscar la semilla
             let pImg = assets.extras['seed_' + s.name];
             if(pImg) ctx.drawImage(pImg, curX + (wrW - pImg.width)/2, 0);
             
@@ -459,34 +545,52 @@
         });
         ctx.globalAlpha = 1;
 
-        // Grid y Cortacesped
+        // Grid
         ctx.strokeStyle = 'rgba(255,0,0,0.3)'; ctx.lineWidth = 2; ctx.beginPath();
         for(let i=0; i<=COLS; i++) { let x = GRID_START_X + i*CELL_WIDTH; ctx.moveTo(x, GRID_START_Y); ctx.lineTo(x, GRID_END_Y); }
         for(let i=0; i<=ROWS; i++) { let y = GRID_START_Y + i*CELL_HEIGHT; ctx.moveTo(GRID_START_X, y); ctx.lineTo(GRID_END_X, y); }
         ctx.stroke();
 
-        const lawnX = -70;
-        for(let r=0; r<ROWS; r++) {
-            let y = GRID_START_Y + r*CELL_HEIGHT + CELL_HEIGHT/2;
-            if(assets.extras.cortacesped) ctx.drawImage(assets.extras.cortacesped, lawnX, y - assets.extras.cortacesped.height/2);
-        }
+        // Entidades
+        lawnmowers.forEach(lm => { lm.update(); lm.draw(); });
 
-        plants.forEach(p => { p.update(); p.draw(); });
+        plants.forEach((p, i) => { 
+            p.update(); 
+            p.draw(); 
+            if(p.markedForDeletion) plants.splice(i, 1);
+        });
+
         zombies.forEach((z, i) => { 
             z.update(); 
             z.draw(); 
             if (z.markedForDeletion) zombies.splice(i, 1);
         });
+        
         peas.forEach((p, i) => {
             p.update();
             p.draw();
             if (p.markedForDeletion) peas.splice(i, 1);
         });
+        
         suns.forEach((s, i) => {
             s.update();
             s.draw();
             if (s.markedForDeletion) suns.splice(i, 1);
         });
+
+        if (gameOver) {
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (assets.extras.gameOver) {
+                const goImg = assets.extras.gameOver;
+                ctx.drawImage(goImg, canvas.width/2 - goImg.width/2, canvas.height/2 - goImg.height/2);
+            } else {
+                ctx.fillStyle = 'red';
+                ctx.font = '80px Arial';
+                ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+            }
+            return; 
+        }
 
         if (frames % 350 === 0) suns.push(new Sun()); 
         if (frames % 600 === 0) zombies.push(new Zombie()); 
@@ -512,6 +616,7 @@
     }
 
     loadImages(() => { 
+        initGame();
         drawGame(); 
     });
 
