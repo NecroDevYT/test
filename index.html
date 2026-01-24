@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plants vs. Zombies - Nivel 1</title>
+    <title>Plants vs. Zombies - Nivel 1 (Final Fix)</title>
     <style>
         body {
             background-color: #333;
@@ -15,7 +15,6 @@
             overflow: hidden;
         }
         canvas {
-            /* Tamaño visual ajustado a la pantalla, manteniendo aspect ratio */
             max-width: 100%;
             max-height: 100vh;
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
@@ -27,11 +26,12 @@
     <canvas id="gameCanvas" width="1636" height="1332"></canvas>
 
 <script>
-// --- CONFIGURACIÓN GLOBAL ---
+    // ==========================================
+    // 1. CONFIGURACIÓN
+    // ==========================================
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
-    // Ajustar coordenadas del mouse al tamaño real del canvas visual
     function getMousePos(evt) {
         const rect = canvas.getBoundingClientRect();
         const scaleX = canvas.width / rect.width;
@@ -42,15 +42,17 @@
         };
     }
 
-    // Estado del Juego
+    // --- ESTADO DEL JUEGO ---
     let frames = 0;
-    let sunAmount = 150; // Empezamos con un poco más para probar
+    let sunAmount = 150; 
     let suns = []; 
-    let plants = []; // Array de plantas en el tablero
-    let gridState = []; // Matriz para controlar celdas ocupadas
-    let selectedSeed = null; // Planta seleccionada actualmente
+    let plants = []; 
+    let zombies = [];
+    let peas = [];
+    let gridState = []; 
+    let selectedSeed = null; 
 
-    // Configuración de Grid
+    // Grid
     const GRID_START_X = 90;
     const GRID_START_Y = 280;
     const GRID_END_X = 1577;
@@ -60,53 +62,26 @@
     const CELL_WIDTH = (GRID_END_X - GRID_START_X) / COLS;
     const CELL_HEIGHT = (GRID_END_Y - GRID_START_Y) / ROWS;
 
-    // Inicializar matriz de grid vacía
     for (let c = 0; c < COLS; c++) {
         gridState[c] = [];
-        for (let r = 0; r < ROWS; r++) {
-            gridState[c][r] = null; // null = vacía
-        }
+        for (let r = 0; r < ROWS; r++) gridState[c][r] = null;
     }
 
-    // Configuración de Semillas y Escalas 
+    // Semillas
     const seeds = [
-        { 
-            name: 'girasol', 
-            img: 'semilla de girasol.png', 
-            cost: 50, 
-            scale: 0.3,
-            frameCount: 58, // 00 a 57 [cite: 9]
-            folder: 'girasol perturbador',
-            prefix: 'girasol perturbador'
-        },
-        { 
-            name: 'lanzaguisantes', 
-            img: 'semilla de lanza guisantes.png', 
-            cost: 100, 
-            scale: 0.35, // 
-            frameCount: 31, // 00 a 30 [cite: 19]
-            folder: 'lg reposo perturbador',
-            prefix: 'lg reposo perturbador'
-        },
-        { 
-            name: 'nuez', 
-            img: 'semilla de nuez.png', 
-            cost: 50, 
-            scale: 0.3,
-            frameCount: 1, // Solo nuez0 [cite: 19]
-            folder: 'nuez',
-            prefix: 'nuez'
-        }
+        { name: 'girasol', cost: 50, scale: 0.3 },
+        { name: 'lanzaguisantes', cost: 100, scale: 0.35 },
+        { name: 'nuez', cost: 50, scale: 0.3 }
     ];
 
-    // --- GESTOR DE RECURSOS ---
-    const assets = {
-        sunAnimation: [],
-        plants: {
-            girasol: [],
-            lanzaguisantes: [],
-            nuez: []
-        }
+    // ==========================================
+    // 2. GESTOR DE RECURSOS (SOLUCIÓN ERRORES)
+    // ==========================================
+    const assets = { 
+        sunAnimation: [], 
+        plants: { girasol: [], lg_reposo: [], lg_ataque: [], nuez: [] },
+        zombies: { walk: [], die: [] },
+        extras: {}
     };
     
     const imageSources = {
@@ -116,345 +91,430 @@
         solUI: 'recursos/sol.png', 
         envoltura: 'recursos/envoltura de semilla.png',
         cortacesped: 'recursos/cortacesped.png',
+        guisante: 'recursos/guisante.png',
         seed_girasol: 'recursos/semilla de girasol.png',
         seed_lanzaguisantes: 'recursos/semilla de lanza guisantes.png',
         seed_nuez: 'recursos/semilla de nuez.png'
     };
 
-    // 1. Cargar Animación Sol (000-191)
-    for (let i = 0; i <= 191; i++) {
-        const index = String(i).padStart(3, '0');
-        imageSources[`sol_anim_${i}`] = `recursos/sol/sol${index}.png`;
-    }
+    // Función auxiliar: digits indica cuántos ceros usar (2 para "00", 3 para "000")
+    const addAnim = (prefix, start, end, digits, pathFn) => {
+        for (let i = start; i <= end; i++) {
+            const idx = String(i).padStart(digits, '0');
+            imageSources[`${prefix}_${i}`] = pathFn(idx);
+        }
+    };
 
-    // 2. Cargar Animaciones Plantas
-    // Girasol (00-57)
-    for (let i = 0; i <= 57; i++) {
-        const index = String(i).padStart(2, '0');
-        imageSources[`plant_girasol_${i}`] = `recursos/girasol perturbador/girasol perturbador${index}.png`;
-    }
-    // Lanzaguisantes (00-30)
-    for (let i = 0; i <= 30; i++) {
-        const index = String(i).padStart(2, '0');
-        imageSources[`plant_lanzaguisantes_${i}`] = `recursos/lg reposo perturbador/lg reposo perturbador${index}.png`;
-    }
-    // Nuez (0)
-    imageSources[`plant_nuez_0`] = `recursos/nuez/nuez0.png`;
+    // --- CARGA CORRECTA DE ANIMACIONES ---
+    
+    // 1. Sol (Tiene 3 dígitos: sol000.png)
+    addAnim('sol_anim', 0, 191, 3, i => `recursos/sol/sol${i}.png`);
+    
+    // 2. Girasol (Tiene 2 dígitos: girasol perturbador00.png) -> ESTO ARREGLA EL ERROR 404
+    addAnim('plant_girasol', 0, 57, 2, i => `recursos/girasol perturbador/girasol perturbador${i}.png`);
+    
+    // 3. Lanzaguisantes Reposo (2 dígitos)
+    addAnim('plant_lg_reposo', 0, 30, 2, i => `recursos/lg reposo perturbador/lg reposo perturbador${i}.png`);
+    
+    // 4. Lanzaguisantes Ataque (2 dígitos)
+    addAnim('plant_lg_ataque', 0, 45, 2, i => `recursos/lanza guisantes ataque/lanza guisantes ataque${i}.png`);
+    
+    // 5. Zombie Caminata (2 dígitos)
+    addAnim('zombie_walk', 0, 45, 2, i => `recursos/zombie caminata/zombie caminata${i}.png`);
+    
+    // 6. Zombie Muerte (2 dígitos)
+    addAnim('zombie_die', 0, 49, 2, i => `recursos/zombie perdurbador cae/zombie perdurbador cae${i}.png`);
+
+    // 7. Nuez (Imagen única)
+    imageSources['plant_nuez_0'] = `recursos/nuez/nuez0.png`;
+
 
     let assetsLoaded = 0;
     const totalAssets = Object.keys(imageSources).length;
 
     function loadImages(callback) {
-        console.log(`Cargando recursos...`);
+        console.log(`Cargando ${totalAssets} recursos...`);
+        
+        const onAssetLoad = () => {
+            assetsLoaded++;
+            if (assetsLoaded === totalAssets) {
+                console.log("Carga completa. Iniciando juego.");
+                callback();
+            }
+        };
+
         for (let key in imageSources) {
             const img = new Image();
             img.src = imageSources[key];
+            
             img.onload = () => {
-                // Clasificar imágenes en sus arrays correspondientes
-                if (key.startsWith('sol_anim_')) {
-                    const idx = parseInt(key.replace('sol_anim_', ''));
-                    assets.sunAnimation[idx] = img;
-                } else if (key.startsWith('plant_girasol_')) {
-                    const idx = parseInt(key.replace('plant_girasol_', ''));
-                    assets.plants.girasol[idx] = img;
-                } else if (key.startsWith('plant_lanzaguisantes_')) {
-                    const idx = parseInt(key.replace('plant_lanzaguisantes_', ''));
-                    assets.plants.lanzaguisantes[idx] = img;
-                } else if (key.startsWith('plant_nuez_')) {
-                    assets.plants.nuez[0] = img;
-                } else {
-                    assets[key] = img;
-                }
+                // Clasificación de imágenes
+                if (key.startsWith('sol_anim_')) assets.sunAnimation[parseInt(key.split('_')[2])] = img;
+                else if (key.startsWith('plant_girasol_')) assets.plants.girasol[parseInt(key.split('_')[2])] = img;
+                else if (key.startsWith('plant_lg_reposo_')) assets.plants.lg_reposo[parseInt(key.split('_')[3])] = img;
+                else if (key.startsWith('plant_lg_ataque_')) assets.plants.lg_ataque[parseInt(key.split('_')[3])] = img;
+                else if (key.startsWith('plant_nuez_')) assets.plants.nuez[0] = img;
+                else if (key.startsWith('zombie_walk_')) assets.zombies.walk[parseInt(key.split('_')[2])] = img;
+                else if (key.startsWith('zombie_die_')) assets.zombies.die[parseInt(key.split('_')[2])] = img;
+                else assets.extras[key] = img; // AQUÍ SE GUARDAN LAS SEMILLAS
                 
-                assetsLoaded++;
-                if (assetsLoaded === totalAssets) callback();
+                onAssetLoad();
+            };
+
+            img.onerror = () => {
+                console.warn(`No se pudo cargar: ${imageSources[key]}`);
+                onAssetLoad(); // Continuar aunque falle una imagen
             };
         }
     }
 
-    // --- CLASES ---
+    // ==========================================
+    // 3. CLASES
+    // ==========================================
 
     class Sun {
-        constructor() {
-            this.x = Math.random() * (GRID_END_X - GRID_START_X) + GRID_START_X;
-            this.y = -80;
-            this.finalY = Math.random() * (GRID_END_Y - GRID_START_Y) + GRID_START_Y;
-            this.speed = 3; 
+        constructor(x, y, isNatural = true) {
+            this.x = x || Math.random() * (GRID_END_X - GRID_START_X) + GRID_START_X;
+            this.y = y || -80;
+            this.finalY = isNatural ? (Math.random() * (GRID_END_Y - GRID_START_Y) + GRID_START_Y) : y;
+            this.speed = 2; 
             this.frame = 0;
             this.totalFrames = assets.sunAnimation.length;
             this.scale = 0.5;
             this.markedForDeletion = false;
-            // Hitbox radius (aprox) para clic
             this.radius = 40; 
+            this.isNatural = isNatural;
         }
-
         update() {
-            // Animación constante
-            if (frames % 2 === 0) { 
+            if (frames % 2 === 0) {
                 this.frame++;
                 if (this.frame >= this.totalFrames) this.markedForDeletion = true;
             }
-            // Caída
-            if (this.y < this.finalY) {
+            if (this.isNatural && this.y < this.finalY) {
                 this.y += this.speed;
                 if (this.y > this.finalY) this.y = this.finalY;
             }
         }
-
         draw() {
-            if (this.markedForDeletion) return;
-            const currentFrame = this.frame < this.totalFrames ? this.frame : this.totalFrames - 1;
-            const img = assets.sunAnimation[currentFrame];
+            const img = assets.sunAnimation[this.frame] || assets.sunAnimation[0];
             if (!img) return;
-
-            const width = img.width * this.scale;
-            const height = img.height * this.scale;
-            // Dibujar centrado
-            ctx.drawImage(img, this.x - width/2, this.y - height/2, width, height);
-        }
-
-        isClicked(mx, my) {
-            // Distancia euclidiana simple
-            const dx = mx - this.x;
-            const dy = my - this.y;
-            return Math.sqrt(dx*dx + dy*dy) < this.radius;
-        }
-    }
-
-    class Plant {
-        constructor(typeIndex, col, row) {
-            const seedInfo = seeds[typeIndex];
-            this.type = seedInfo.name;
-            this.col = col;
-            this.row = row;
-            
-            // Posición centrada en la celda
-            this.x = GRID_START_X + (col * CELL_WIDTH) + (CELL_WIDTH / 2);
-            this.y = GRID_START_Y + (row * CELL_HEIGHT) + (CELL_HEIGHT / 2);
-            
-            this.scale = seedInfo.scale;
-            this.frame = 0;
-            this.frameCount = seedInfo.frameCount;
-            this.animSpeed = 2; // Actualizar cada 2 frames (30fps)
-        }
-
-        update() {
-            if (this.frameCount > 1 && frames % this.animSpeed === 0) {
-                this.frame++;
-                if (this.frame >= this.frameCount) this.frame = 0; // Loop
-            }
-        }
-
-        draw() {
-            const arr = assets.plants[this.type];
-            const img = arr[this.frame] || arr[0];
-            
             const w = img.width * this.scale;
             const h = img.height * this.scale;
-            
-            // Hitbox/Dibujo en el centro [cite: 52]
             ctx.drawImage(img, this.x - w/2, this.y - h/2, w, h);
         }
     }
 
-    // --- INTERACCIÓN ---
+    class Pea {
+        constructor(x, y, row) {
+            this.x = x;
+            this.y = y;
+            this.row = row;
+            this.speed = 10;
+            this.markedForDeletion = false;
+        }
+        update() {
+            this.x += this.speed;
+            if (this.x > canvas.width) this.markedForDeletion = true;
+        }
+        draw() {
+            if(assets.extras.guisante) ctx.drawImage(assets.extras.guisante, this.x, this.y);
+        }
+    }
+
+    class Zombie {
+        constructor() {
+            this.row = Math.floor(Math.random() * ROWS);
+            this.x = GRID_END_X + 50; 
+            this.y = GRID_START_Y + (this.row * CELL_HEIGHT) + (CELL_HEIGHT / 2) - 40; 
+            this.speed = 0.4;
+            this.health = 100;
+            this.scale = 0.35;
+            this.frame = 0;
+            this.action = 'walk'; 
+            this.markedForDeletion = false;
+            this.animSpeed = 2;
+        }
+
+        update() {
+            if (frames % this.animSpeed === 0) {
+                this.frame++;
+                if (this.action === 'walk') {
+                    if (this.frame >= assets.zombies.walk.length) this.frame = 0;
+                } else if (this.action === 'die') {
+                    if (this.frame >= assets.zombies.die.length) this.markedForDeletion = true; 
+                }
+            }
+
+            if (this.action === 'walk') {
+                this.x -= this.speed;
+                if (this.x < -100) this.markedForDeletion = true; 
+            }
+        }
+
+        takeDamage(amount) {
+            if (this.action === 'die') return;
+            this.health -= amount;
+            if (this.health <= 0) {
+                this.health = 0;
+                this.action = 'die';
+                this.frame = 0; 
+            }
+        }
+
+        draw() {
+            let imgArr = (this.action === 'walk') ? assets.zombies.walk : assets.zombies.die;
+            let img = imgArr[this.frame] || imgArr[0];
+            if (img) {
+                const w = img.width * this.scale;
+                const h = img.height * this.scale;
+                ctx.drawImage(img, this.x - w/2, this.y - h/2, w, h);
+            }
+        }
+    }
+
+    class Plant {
+        constructor(type, col, row) {
+            this.type = type; 
+            this.col = col;
+            this.row = row;
+            this.x = GRID_START_X + (col * CELL_WIDTH) + (CELL_WIDTH / 2);
+            this.y = GRID_START_Y + (row * CELL_HEIGHT) + (CELL_HEIGHT / 2);
+            
+            if (type === 'girasol') {
+                this.scale = 0.3;
+                this.animArr = assets.plants.girasol;
+                this.productionTimer = 0;
+                this.productionInterval = 720; 
+            } else if (type === 'lanzaguisantes') {
+                this.scale = 0.35;
+                this.animArr = assets.plants.lg_reposo;
+                this.isAttacking = false;
+            } else {
+                this.scale = 0.3;
+                this.animArr = assets.plants.nuez;
+            }
+
+            this.frame = 0;
+            this.animSpeed = 2;
+        }
+
+        update() {
+            if (this.animArr.length > 1 && frames % this.animSpeed === 0) {
+                this.frame++;
+                
+                if (this.type === 'lanzaguisantes' && this.isAttacking && this.frame === 27) {
+                    peas.push(new Pea(this.x + 20, this.y - 40, this.row)); 
+                }
+
+                if (this.frame >= this.animArr.length) this.frame = 0;
+            }
+
+            if (this.type === 'girasol') {
+                this.productionTimer++;
+                if (this.productionTimer >= this.productionInterval) {
+                    this.productionTimer = 0;
+                    suns.push(new Sun(this.x, this.y, false)); 
+                }
+            }
+
+            if (this.type === 'lanzaguisantes') {
+                let enemyFound = false;
+                for (let z of zombies) {
+                    if (z.row === this.row && z.x > this.x && z.action !== 'die') {
+                        enemyFound = true;
+                        break;
+                    }
+                }
+
+                if (enemyFound) {
+                    if (!this.isAttacking) {
+                        this.isAttacking = true;
+                        this.animArr = assets.plants.lg_ataque; 
+                        this.frame = 0; 
+                    }
+                } else {
+                    if (this.isAttacking) {
+                        this.isAttacking = false;
+                        this.animArr = assets.plants.lg_reposo; 
+                        this.frame = 0;
+                    }
+                }
+            }
+        }
+
+        draw() {
+            const img = this.animArr[this.frame] || this.animArr[0];
+            if (!img) return;
+            const w = img.width * this.scale;
+            const h = img.height * this.scale;
+            ctx.drawImage(img, this.x - w/2, this.y - h/2, w, h);
+        }
+    }
+
+    // ==========================================
+    // 4. INTERACCIÓN
+    // ==========================================
     let mouseX = 0;
     let mouseY = 0;
 
-    canvas.addEventListener('mousemove', (e) => {
+    canvas.addEventListener('mousemove', e => {
         const pos = getMousePos(e);
         mouseX = pos.x;
         mouseY = pos.y;
     });
 
-    canvas.addEventListener('mousedown', (e) => {
+    canvas.addEventListener('mousedown', e => {
         const pos = getMousePos(e);
         const mx = pos.x;
         const my = pos.y;
 
-        // 1. Recoger Soles (Iterar al revés para agarrar el de arriba primero visualmente)
-        let sunClicked = false;
         for (let i = suns.length - 1; i >= 0; i--) {
-            if (suns[i].isClicked(mx, my)) {
+            if (Math.sqrt((mx - suns[i].x)**2 + (my - suns[i].y)**2) < 50) {
                 suns.splice(i, 1);
-                sunAmount += 25; // Sumar sol
-                sunClicked = true;
-                break; // Solo un sol por clic
+                sunAmount += 25;
+                return;
             }
         }
-        if (sunClicked) return;
 
-        // 2. Selección en Barra de Semillas
-        // Calcular rangos de la UI (hardcodeado según lógica de dibujado UI anterior)
-        let currentX = 200;
-        const wrapperWidth = assets.envoltura.width; // Asumimos cargado
-        
-        // Si hago click derecho o click fuera, deseleccionar
         if (selectedSeed) {
-            // Intentar Plantar
             if (mx >= GRID_START_X && mx <= GRID_END_X && my >= GRID_START_Y && my <= GRID_END_Y) {
                 const col = Math.floor((mx - GRID_START_X) / CELL_WIDTH);
                 const row = Math.floor((my - GRID_START_Y) / CELL_HEIGHT);
-                
                 if (gridState[col][row] === null) {
-                    // Plantar
-                    plants.push(new Plant(selectedSeed.index, col, row));
-                    gridState[col][row] = selectedSeed.name; // Ocupar celda
+                    plants.push(new Plant(selectedSeed.name, col, row));
+                    gridState[col][row] = selectedSeed.name; 
                     sunAmount -= selectedSeed.cost;
-                    selectedSeed = null; // Deseleccionar tras plantar
+                    selectedSeed = null; 
                 }
             } else {
-                // Cancelar selección si click fuera de grid (opcional)
                 selectedSeed = null; 
             }
-            return; 
+            return;
         }
 
-        // Seleccionar nueva semilla
+        let currentX = 200; 
+        const w = assets.extras.envoltura ? assets.extras.envoltura.width : 100;
+        const h = assets.extras.envoltura ? assets.extras.envoltura.height : 140;
         seeds.forEach((seed, index) => {
-            // Chequear si click en esta semilla (Rango X: currentX a currentX+width, Y: 20 a 20+height)
-            // Altura envoltura es aprox 140px (segun imagen)
-            if (mx >= currentX && mx <= currentX + wrapperWidth &&
-                my >= 20 && my <= 20 + 100) { // Altura aproximada clickeable
-                
+            if (mx >= currentX && mx <= currentX + w && my >= 20 && my <= 20 + h) {
                 if (sunAmount >= seed.cost) {
                     selectedSeed = { ...seed, index: index };
                 }
             }
-            currentX += wrapperWidth;
+            currentX += w;
         });
     });
 
+    // ==========================================
+    // 5. GAME LOOP
+    // ==========================================
 
-    // --- DIBUJADO UI & JUEGO ---
-
-    function drawUI() {
-        ctx.drawImage(assets.background, 0, 0);
-        ctx.drawImage(assets.barraSemillas, 10, 10);
-
-        // Sol UI
-        const sunRangeCenter = 10 + (190 / 2);
-        const sunImgX = sunRangeCenter - (assets.solUI.width / 2);
-        ctx.drawImage(assets.solUI, sunImgX, 0);
-        
-        ctx.fillStyle = 'black'; 
-        ctx.font = 'bold 40px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(sunAmount, sunRangeCenter, 195);
-
-        // Pala UI
-        const shovelRangeCenter = 1110 + (127 / 2);
-        const shovelX = shovelRangeCenter - (assets.pala.width / 2);
-        ctx.drawImage(assets.pala, shovelX, 0);
-
-        // Semillas
-        let currentX = 200;
-        seeds.forEach(seed => {
-            const wrapperWidth = assets.envoltura.width;
-            
-            // Oscurecer si no alcanza el dinero
-            ctx.globalAlpha = (sunAmount >= seed.cost) ? 1.0 : 0.5;
-            
-            ctx.drawImage(assets.envoltura, currentX, 20);
-            
-            const plantImg = assets['seed_' + seed.name];
-            const plantX = currentX + (wrapperWidth - plantImg.width) / 2;
-            ctx.drawImage(plantImg, plantX, 0);
-
-            ctx.fillStyle = 'black';
-            ctx.font = 'bold 25px Arial';
-            ctx.fillText(seed.cost, currentX + (wrapperWidth / 2), 183);
-
-            currentX += wrapperWidth; 
-        });
-        ctx.globalAlpha = 1.0; // Reset alpha
-    }
-
-    function drawEntities() {
-        // Cortacesped
-        const lawnmowerX = -70;
-        for (let row = 0; row < ROWS; row++) {
-            const rowY = GRID_START_Y + (row * CELL_HEIGHT);
-            const centerY = rowY + (CELL_HEIGHT / 2);
-            const lmY = centerY - (assets.cortacesped.height / 2);
-            ctx.drawImage(assets.cortacesped, lawnmowerX, lmY);
-        }
-    }
-
-    function drawGhostPlant() {
-        if (selectedSeed) {
-            // Obtener primera imagen de la planta seleccionada
-            let img;
-            if (selectedSeed.name === 'nuez') img = assets.plants.nuez[0];
-            else if (selectedSeed.name === 'girasol') img = assets.plants.girasol[0];
-            else img = assets.plants.lanzaguisantes[0];
-
-            if (img) {
-                const w = img.width * selectedSeed.scale;
-                const h = img.height * selectedSeed.scale;
-                
-                ctx.globalAlpha = 0.6; // Transparencia fantasma
-                // Seguir al mouse (centrado)
-                ctx.drawImage(img, mouseX - w/2, mouseY - h/2, w, h);
-                ctx.globalAlpha = 1.0;
+    function checkCollisions() {
+        for (let i = peas.length - 1; i >= 0; i--) {
+            let p = peas[i];
+            let hit = false;
+            for (let z of zombies) {
+                if (z.action === 'die') continue; 
+                if (z.row === p.row) { 
+                    if (p.x > z.x - 40 && p.x < z.x + 40) {
+                        z.takeDamage(20); 
+                        hit = true;
+                        break; 
+                    }
+                }
             }
+            if (hit) peas.splice(i, 1);
         }
     }
 
-    // --- BUCLE PRINCIPAL ---
-    function gameLoop() {
+    function drawGame() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        drawUI();
+        // UI
+        if(assets.extras.background) ctx.drawImage(assets.extras.background, 0, 0);
+        if(assets.extras.barraSemillas) ctx.drawImage(assets.extras.barraSemillas, 10, 10);
         
-        // Dibujar Grid (debajo de plantas)
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (let i = 0; i <= COLS; i++) {
-            const x = GRID_START_X + (i * CELL_WIDTH);
-            ctx.moveTo(x, GRID_START_Y);
-            ctx.lineTo(x, GRID_END_Y);
-        }
-        for (let i = 0; i <= ROWS; i++) {
-            const y = GRID_START_Y + (i * CELL_HEIGHT);
-            ctx.moveTo(GRID_START_X, y);
-            ctx.lineTo(GRID_END_X, y);
-        }
+        const sunCenter = 10 + (190 / 2);
+        if(assets.extras.solUI) ctx.drawImage(assets.extras.solUI, sunCenter - assets.extras.solUI.width/2, 0);
+        
+        ctx.fillStyle = 'black'; ctx.font = 'bold 40px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(sunAmount, sunCenter, 195);
+        
+        if(assets.extras.pala) ctx.drawImage(assets.extras.pala, 1173 - assets.extras.pala.width/2, 0);
+        
+        let curX = 200;
+        const wrW = assets.extras.envoltura ? assets.extras.envoltura.width : 50; 
+        
+        seeds.forEach(s => {
+            ctx.globalAlpha = sunAmount >= s.cost ? 1 : 0.5;
+            if(assets.extras.envoltura) ctx.drawImage(assets.extras.envoltura, curX, 20);
+            
+            // CORRECCIÓN: Usar assets.extras para buscar la semilla
+            let pImg = assets.extras['seed_' + s.name];
+            if(pImg) ctx.drawImage(pImg, curX + (wrW - pImg.width)/2, 0);
+            
+            ctx.fillStyle = 'black'; ctx.font = 'bold 25px Arial';
+            ctx.fillText(s.cost, curX + wrW/2, 183);
+            curX += wrW;
+        });
+        ctx.globalAlpha = 1;
+
+        // Grid y Cortacesped
+        ctx.strokeStyle = 'rgba(255,0,0,0.3)'; ctx.lineWidth = 2; ctx.beginPath();
+        for(let i=0; i<=COLS; i++) { let x = GRID_START_X + i*CELL_WIDTH; ctx.moveTo(x, GRID_START_Y); ctx.lineTo(x, GRID_END_Y); }
+        for(let i=0; i<=ROWS; i++) { let y = GRID_START_Y + i*CELL_HEIGHT; ctx.moveTo(GRID_START_X, y); ctx.lineTo(GRID_END_X, y); }
         ctx.stroke();
 
-        drawEntities(); // Cortacesped
+        const lawnX = -70;
+        for(let r=0; r<ROWS; r++) {
+            let y = GRID_START_Y + r*CELL_HEIGHT + CELL_HEIGHT/2;
+            if(assets.extras.cortacesped) ctx.drawImage(assets.extras.cortacesped, lawnX, y - assets.extras.cortacesped.height/2);
+        }
 
-        // Actualizar y Dibujar Plantas
-        plants.forEach(plant => {
-            plant.update();
-            plant.draw();
+        plants.forEach(p => { p.update(); p.draw(); });
+        zombies.forEach((z, i) => { 
+            z.update(); 
+            z.draw(); 
+            if (z.markedForDeletion) zombies.splice(i, 1);
+        });
+        peas.forEach((p, i) => {
+            p.update();
+            p.draw();
+            if (p.markedForDeletion) peas.splice(i, 1);
+        });
+        suns.forEach((s, i) => {
+            s.update();
+            s.draw();
+            if (s.markedForDeletion) suns.splice(i, 1);
         });
 
-        // Actualizar y Dibujar Soles
-        if (frames % 300 === 0) suns.push(new Sun());
+        if (frames % 350 === 0) suns.push(new Sun()); 
+        if (frames % 600 === 0) zombies.push(new Zombie()); 
 
-        for (let i = 0; i < suns.length; i++) {
-            suns[i].update();
-            suns[i].draw();
-            if (suns[i].markedForDeletion) {
-                suns.splice(i, 1);
-                i--;
+        checkCollisions();
+
+        if (selectedSeed) {
+            let img;
+            if (selectedSeed.name === 'girasol') img = assets.plants.girasol[0];
+            else if (selectedSeed.name === 'lanzaguisantes') img = assets.plants.lg_reposo[0];
+            else img = assets.plants.nuez[0];
+            
+            if (img) {
+                ctx.globalAlpha = 0.6;
+                const s = selectedSeed.scale;
+                ctx.drawImage(img, mouseX - (img.width*s)/2, mouseY - (img.height*s)/2, img.width*s, img.height*s);
+                ctx.globalAlpha = 1;
             }
         }
 
-        // Dibujar planta en el mouse si hay selección
-        drawGhostPlant();
-
         frames++;
-        requestAnimationFrame(gameLoop);
+        requestAnimationFrame(drawGame);
     }
 
-    // Iniciar
-    loadImages(() => {
-        console.log("Juego Iniciado");
-        gameLoop();
+    loadImages(() => { 
+        drawGame(); 
     });
+
 </script>
 </body>
 </html>
