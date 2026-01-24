@@ -31,11 +31,25 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
+    // Ajustar coordenadas del mouse al tamaño real del canvas visual
+    function getMousePos(evt) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return {
+            x: (evt.clientX - rect.left) * scaleX,
+            y: (evt.clientY - rect.top) * scaleY
+        };
+    }
+
     // Estado del Juego
-    let frames = 0; // Contador global de frames para sincronización
-    let sunAmount = 50; 
-    let suns = []; // Array para almacenar los objetos "Sol" activos
-    
+    let frames = 0;
+    let sunAmount = 150; // Empezamos con un poco más para probar
+    let suns = []; 
+    let plants = []; // Array de plantas en el tablero
+    let gridState = []; // Matriz para controlar celdas ocupadas
+    let selectedSeed = null; // Planta seleccionada actualmente
+
     // Configuración de Grid
     const GRID_START_X = 90;
     const GRID_START_Y = 280;
@@ -46,16 +60,53 @@
     const CELL_WIDTH = (GRID_END_X - GRID_START_X) / COLS;
     const CELL_HEIGHT = (GRID_END_Y - GRID_START_Y) / ROWS;
 
-    // Configuración de Semillas
+    // Inicializar matriz de grid vacía
+    for (let c = 0; c < COLS; c++) {
+        gridState[c] = [];
+        for (let r = 0; r < ROWS; r++) {
+            gridState[c][r] = null; // null = vacía
+        }
+    }
+
+    // Configuración de Semillas y Escalas 
     const seeds = [
-        { name: 'girasol', img: 'semilla de girasol.png', cost: 50 },
-        { name: 'lanzaguisantes', img: 'semilla de lanza guisantes.png', cost: 100 },
-        { name: 'nuez', img: 'semilla de nuez.png', cost: 50 }
+        { 
+            name: 'girasol', 
+            img: 'semilla de girasol.png', 
+            cost: 50, 
+            scale: 0.3,
+            frameCount: 58, // 00 a 57 [cite: 9]
+            folder: 'girasol perturbador',
+            prefix: 'girasol perturbador'
+        },
+        { 
+            name: 'lanzaguisantes', 
+            img: 'semilla de lanza guisantes.png', 
+            cost: 100, 
+            scale: 0.35, // 
+            frameCount: 31, // 00 a 30 [cite: 19]
+            folder: 'lg reposo perturbador',
+            prefix: 'lg reposo perturbador'
+        },
+        { 
+            name: 'nuez', 
+            img: 'semilla de nuez.png', 
+            cost: 50, 
+            scale: 0.3,
+            frameCount: 1, // Solo nuez0 [cite: 19]
+            folder: 'nuez',
+            prefix: 'nuez'
+        }
     ];
 
     // --- GESTOR DE RECURSOS ---
     const assets = {
-        sunAnimation: [] // Array para guardar la secuencia del sol
+        sunAnimation: [],
+        plants: {
+            girasol: [],
+            lanzaguisantes: [],
+            nuez: []
+        }
     };
     
     const imageSources = {
@@ -70,122 +121,212 @@
         seed_nuez: 'recursos/semilla de nuez.png'
     };
 
-    // Generar rutas para la animación del sol (000 a 191)
-    // Fuente: Estructura.txt indica sol000.png hasta sol191.png
+    // 1. Cargar Animación Sol (000-191)
     for (let i = 0; i <= 191; i++) {
-        // Formatear número a 3 dígitos (ej: 0 -> "000", 15 -> "015")
         const index = String(i).padStart(3, '0');
         imageSources[`sol_anim_${i}`] = `recursos/sol/sol${index}.png`;
     }
+
+    // 2. Cargar Animaciones Plantas
+    // Girasol (00-57)
+    for (let i = 0; i <= 57; i++) {
+        const index = String(i).padStart(2, '0');
+        imageSources[`plant_girasol_${i}`] = `recursos/girasol perturbador/girasol perturbador${index}.png`;
+    }
+    // Lanzaguisantes (00-30)
+    for (let i = 0; i <= 30; i++) {
+        const index = String(i).padStart(2, '0');
+        imageSources[`plant_lanzaguisantes_${i}`] = `recursos/lg reposo perturbador/lg reposo perturbador${index}.png`;
+    }
+    // Nuez (0)
+    imageSources[`plant_nuez_0`] = `recursos/nuez/nuez0.png`;
 
     let assetsLoaded = 0;
     const totalAssets = Object.keys(imageSources).length;
 
     function loadImages(callback) {
-        console.log(`Cargando ${totalAssets} recursos...`);
+        console.log(`Cargando recursos...`);
         for (let key in imageSources) {
             const img = new Image();
             img.src = imageSources[key];
             img.onload = () => {
-                // Si es parte de la animación del sol, guardarlo en el array ordenado
+                // Clasificar imágenes en sus arrays correspondientes
                 if (key.startsWith('sol_anim_')) {
-                    const index = parseInt(key.replace('sol_anim_', ''));
-                    assets.sunAnimation[index] = img;
+                    const idx = parseInt(key.replace('sol_anim_', ''));
+                    assets.sunAnimation[idx] = img;
+                } else if (key.startsWith('plant_girasol_')) {
+                    const idx = parseInt(key.replace('plant_girasol_', ''));
+                    assets.plants.girasol[idx] = img;
+                } else if (key.startsWith('plant_lanzaguisantes_')) {
+                    const idx = parseInt(key.replace('plant_lanzaguisantes_', ''));
+                    assets.plants.lanzaguisantes[idx] = img;
+                } else if (key.startsWith('plant_nuez_')) {
+                    assets.plants.nuez[0] = img;
                 } else {
                     assets[key] = img;
                 }
                 
                 assetsLoaded++;
-                if (assetsLoaded === totalAssets) {
-                    callback();
-                }
+                if (assetsLoaded === totalAssets) callback();
             };
-            img.onerror = () => {
-                console.error("Error cargando: " + imageSources[key]);
-            }
         }
     }
 
     // --- CLASES ---
 
-class Sun {
+    class Sun {
         constructor() {
-            // Posición X aleatoria dentro del grid
             this.x = Math.random() * (GRID_END_X - GRID_START_X) + GRID_START_X;
-            // Posición Y inicial (fuera de pantalla arriba)
             this.y = -80;
-            // Destino Y aleatorio dentro del grid
             this.finalY = Math.random() * (GRID_END_Y - GRID_START_Y) + GRID_START_Y;
-            
-            // Aumentamos ligeramente la velocidad para asegurar que llegue al suelo
-            // antes de que termine la animación (ya que la animación dicta su vida útil).
             this.speed = 3; 
-            
             this.frame = 0;
             this.totalFrames = assets.sunAnimation.length;
             this.scale = 0.5;
             this.markedForDeletion = false;
+            // Hitbox radius (aprox) para clic
+            this.radius = 40; 
         }
 
         update() {
-            // 1. Animación CONSTANTE (siempre activa)
-            // Se ejecuta independientemente de si cae o está quieto
-            if (frames % 2 === 0) { // Control de 30 FPS
+            // Animación constante
+            if (frames % 2 === 0) { 
                 this.frame++;
-                
-                // Instrucción: Eliminar al terminar la animación
-                if (this.frame >= this.totalFrames) {
-                    this.markedForDeletion = true;
-                }
+                if (this.frame >= this.totalFrames) this.markedForDeletion = true;
             }
-
-            // 2. Lógica de Movimiento
-            // Si no ha llegado a su destino, sigue bajando
+            // Caída
             if (this.y < this.finalY) {
                 this.y += this.speed;
-                // Corrección final para no pasarse del suelo
-                if (this.y > this.finalY) {
-                    this.y = this.finalY;
-                }
+                if (this.y > this.finalY) this.y = this.finalY;
             }
         }
 
         draw() {
             if (this.markedForDeletion) return;
-
-            // Seguridad: si el frame se pasa del array, usar el último disponible
             const currentFrame = this.frame < this.totalFrames ? this.frame : this.totalFrames - 1;
             const img = assets.sunAnimation[currentFrame];
-            
-            if (!img) return; // Evitar errores si la imagen no cargó
+            if (!img) return;
 
             const width = img.width * this.scale;
             const height = img.height * this.scale;
-            const drawX = this.x - (width / 2);
-            const drawY = this.y - (height / 2);
+            // Dibujar centrado
+            ctx.drawImage(img, this.x - width/2, this.y - height/2, width, height);
+        }
 
-            ctx.drawImage(img, drawX, drawY, width, height);
+        isClicked(mx, my) {
+            // Distancia euclidiana simple
+            const dx = mx - this.x;
+            const dy = my - this.y;
+            return Math.sqrt(dx*dx + dy*dy) < this.radius;
         }
     }
 
-    // --- FUNCIONES DE DIBUJADO BASE ---
+    class Plant {
+        constructor(typeIndex, col, row) {
+            const seedInfo = seeds[typeIndex];
+            this.type = seedInfo.name;
+            this.col = col;
+            this.row = row;
+            
+            // Posición centrada en la celda
+            this.x = GRID_START_X + (col * CELL_WIDTH) + (CELL_WIDTH / 2);
+            this.y = GRID_START_Y + (row * CELL_HEIGHT) + (CELL_HEIGHT / 2);
+            
+            this.scale = seedInfo.scale;
+            this.frame = 0;
+            this.frameCount = seedInfo.frameCount;
+            this.animSpeed = 2; // Actualizar cada 2 frames (30fps)
+        }
 
-    function drawGrid() {
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)'; // Rojo semi-transparente
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (let i = 0; i <= COLS; i++) {
-            const x = GRID_START_X + (i * CELL_WIDTH);
-            ctx.moveTo(x, GRID_START_Y);
-            ctx.lineTo(x, GRID_END_Y);
+        update() {
+            if (this.frameCount > 1 && frames % this.animSpeed === 0) {
+                this.frame++;
+                if (this.frame >= this.frameCount) this.frame = 0; // Loop
+            }
         }
-        for (let i = 0; i <= ROWS; i++) {
-            const y = GRID_START_Y + (i * CELL_HEIGHT);
-            ctx.moveTo(GRID_START_X, y);
-            ctx.lineTo(GRID_END_X, y);
+
+        draw() {
+            const arr = assets.plants[this.type];
+            const img = arr[this.frame] || arr[0];
+            
+            const w = img.width * this.scale;
+            const h = img.height * this.scale;
+            
+            // Hitbox/Dibujo en el centro [cite: 52]
+            ctx.drawImage(img, this.x - w/2, this.y - h/2, w, h);
         }
-        ctx.stroke();
     }
+
+    // --- INTERACCIÓN ---
+    let mouseX = 0;
+    let mouseY = 0;
+
+    canvas.addEventListener('mousemove', (e) => {
+        const pos = getMousePos(e);
+        mouseX = pos.x;
+        mouseY = pos.y;
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        const pos = getMousePos(e);
+        const mx = pos.x;
+        const my = pos.y;
+
+        // 1. Recoger Soles (Iterar al revés para agarrar el de arriba primero visualmente)
+        let sunClicked = false;
+        for (let i = suns.length - 1; i >= 0; i--) {
+            if (suns[i].isClicked(mx, my)) {
+                suns.splice(i, 1);
+                sunAmount += 25; // Sumar sol
+                sunClicked = true;
+                break; // Solo un sol por clic
+            }
+        }
+        if (sunClicked) return;
+
+        // 2. Selección en Barra de Semillas
+        // Calcular rangos de la UI (hardcodeado según lógica de dibujado UI anterior)
+        let currentX = 200;
+        const wrapperWidth = assets.envoltura.width; // Asumimos cargado
+        
+        // Si hago click derecho o click fuera, deseleccionar
+        if (selectedSeed) {
+            // Intentar Plantar
+            if (mx >= GRID_START_X && mx <= GRID_END_X && my >= GRID_START_Y && my <= GRID_END_Y) {
+                const col = Math.floor((mx - GRID_START_X) / CELL_WIDTH);
+                const row = Math.floor((my - GRID_START_Y) / CELL_HEIGHT);
+                
+                if (gridState[col][row] === null) {
+                    // Plantar
+                    plants.push(new Plant(selectedSeed.index, col, row));
+                    gridState[col][row] = selectedSeed.name; // Ocupar celda
+                    sunAmount -= selectedSeed.cost;
+                    selectedSeed = null; // Deseleccionar tras plantar
+                }
+            } else {
+                // Cancelar selección si click fuera de grid (opcional)
+                selectedSeed = null; 
+            }
+            return; 
+        }
+
+        // Seleccionar nueva semilla
+        seeds.forEach((seed, index) => {
+            // Chequear si click en esta semilla (Rango X: currentX a currentX+width, Y: 20 a 20+height)
+            // Altura envoltura es aprox 140px (segun imagen)
+            if (mx >= currentX && mx <= currentX + wrapperWidth &&
+                my >= 20 && my <= 20 + 100) { // Altura aproximada clickeable
+                
+                if (sunAmount >= seed.cost) {
+                    selectedSeed = { ...seed, index: index };
+                }
+            }
+            currentX += wrapperWidth;
+        });
+    });
+
+
+    // --- DIBUJADO UI & JUEGO ---
 
     function drawUI() {
         ctx.drawImage(assets.background, 0, 0);
@@ -210,6 +351,10 @@ class Sun {
         let currentX = 200;
         seeds.forEach(seed => {
             const wrapperWidth = assets.envoltura.width;
+            
+            // Oscurecer si no alcanza el dinero
+            ctx.globalAlpha = (sunAmount >= seed.cost) ? 1.0 : 0.5;
+            
             ctx.drawImage(assets.envoltura, currentX, 20);
             
             const plantImg = assets['seed_' + seed.name];
@@ -218,11 +363,11 @@ class Sun {
 
             ctx.fillStyle = 'black';
             ctx.font = 'bold 25px Arial';
-            ctx.textAlign = 'center';
             ctx.fillText(seed.cost, currentX + (wrapperWidth / 2), 183);
 
             currentX += wrapperWidth; 
         });
+        ctx.globalAlpha = 1.0; // Reset alpha
     }
 
     function drawEntities() {
@@ -236,33 +381,70 @@ class Sun {
         }
     }
 
+    function drawGhostPlant() {
+        if (selectedSeed) {
+            // Obtener primera imagen de la planta seleccionada
+            let img;
+            if (selectedSeed.name === 'nuez') img = assets.plants.nuez[0];
+            else if (selectedSeed.name === 'girasol') img = assets.plants.girasol[0];
+            else img = assets.plants.lanzaguisantes[0];
+
+            if (img) {
+                const w = img.width * selectedSeed.scale;
+                const h = img.height * selectedSeed.scale;
+                
+                ctx.globalAlpha = 0.6; // Transparencia fantasma
+                // Seguir al mouse (centrado)
+                ctx.drawImage(img, mouseX - w/2, mouseY - h/2, w, h);
+                ctx.globalAlpha = 1.0;
+            }
+        }
+    }
+
     // --- BUCLE PRINCIPAL ---
     function gameLoop() {
-        // Limpieza
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 1. Dibujar UI estática
         drawUI();
-        drawGrid();
-        drawEntities(); // Cortacesped (entidades estáticas por ahora)
-
-        // 2. Lógica y Dibujado de Soles
-        // Generar sol cada 300 frames (aprox 5 segundos)
-        if (frames % 300 === 0) {
-            suns.push(new Sun());
+        
+        // Dibujar Grid (debajo de plantas)
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i <= COLS; i++) {
+            const x = GRID_START_X + (i * CELL_WIDTH);
+            ctx.moveTo(x, GRID_START_Y);
+            ctx.lineTo(x, GRID_END_Y);
         }
+        for (let i = 0; i <= ROWS; i++) {
+            const y = GRID_START_Y + (i * CELL_HEIGHT);
+            ctx.moveTo(GRID_START_X, y);
+            ctx.lineTo(GRID_END_X, y);
+        }
+        ctx.stroke();
 
-        // Actualizar y dibujar soles
+        drawEntities(); // Cortacesped
+
+        // Actualizar y Dibujar Plantas
+        plants.forEach(plant => {
+            plant.update();
+            plant.draw();
+        });
+
+        // Actualizar y Dibujar Soles
+        if (frames % 300 === 0) suns.push(new Sun());
+
         for (let i = 0; i < suns.length; i++) {
             suns[i].update();
             suns[i].draw();
-            
-            // Eliminar si terminó animación
             if (suns[i].markedForDeletion) {
                 suns.splice(i, 1);
                 i--;
             }
         }
+
+        // Dibujar planta en el mouse si hay selección
+        drawGhostPlant();
 
         frames++;
         requestAnimationFrame(gameLoop);
@@ -270,7 +452,7 @@ class Sun {
 
     // Iniciar
     loadImages(() => {
-        console.log("Recursos cargados. Iniciando Nivel 1.");
+        console.log("Juego Iniciado");
         gameLoop();
     });
 </script>
