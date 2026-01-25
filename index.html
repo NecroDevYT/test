@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plants vs. Zombies - Nivel 1 (Final Pulido)</title>
+    <title>Plants vs. Zombies - Nivel 1 (Pala Fix)</title>
     <style>
         body {
             background-color: #333;
@@ -52,7 +52,10 @@
     let peas = [];
     let lawnmowers = []; 
     let gridState = []; 
+    
+    // Estados de Interacción
     let selectedSeed = null; 
+    let isShovelActive = false; 
 
     // Grid
     const GRID_START_X = 90;
@@ -69,11 +72,11 @@
         for (let r = 0; r < ROWS; r++) gridState[c][r] = null;
     }
 
-    // Semillas
+    // Semillas (Cooldown en frames)
     const seeds = [
-        { name: 'girasol', cost: 50, scale: 0.3 },
-        { name: 'lanzaguisantes', cost: 100, scale: 0.35 },
-        { name: 'nuez', cost: 50, scale: 0.3 }
+        { name: 'girasol', cost: 50, scale: 0.3, cooldown: 450, timer: 0 },
+        { name: 'lanzaguisantes', cost: 100, scale: 0.35, cooldown: 450, timer: 0 },
+        { name: 'nuez', cost: 50, scale: 0.3, cooldown: 1800, timer: 0 }
     ];
 
     // ==========================================
@@ -107,7 +110,6 @@
         }
     };
 
-    // Carga de animaciones
     addAnim('sol_anim', 0, 191, 3, i => `recursos/sol/sol${i}.png`);
     addAnim('plant_girasol', 0, 57, 2, i => `recursos/girasol perturbador/girasol perturbador${i}.png`);
     addAnim('plant_lg_reposo', 0, 30, 2, i => `recursos/lg reposo perturbador/lg reposo perturbador${i}.png`);
@@ -154,31 +156,22 @@
     class Lawnmower {
         constructor(row) {
             this.row = row;
-            // Posición inicial: -70 (borde izquierdo)
-            this.x = -70; 
+            this.x = -70;
             this.y = GRID_START_Y + (row * CELL_HEIGHT) + (CELL_HEIGHT / 2) - 40; 
             this.active = false;
-            this.speed = 15; // Muy rápido
+            this.speed = 15; 
         }
 
         update() {
             if (this.active) {
-                // MODO ACTIVO: Avanzar y matar
                 this.x += this.speed;
-                
-                // Colisión letal con zombies
                 zombies.forEach(z => {
                     if (z.row === this.row && z.action !== 'die') {
-                        // Si el zombi está cerca del cortacesped
-                        if (Math.abs(z.x - this.x) < 60) {
-                            z.takeDamage(9999); // Instakill
-                        }
+                        if (Math.abs(z.x - this.x) < 60) z.takeDamage(9999);
                     }
                 });
             } else {
-                // MODO REPOSO: Esperar contacto
                 zombies.forEach(z => {
-                    // Si un zombi llega a la posición del cortacesped (aprox x < 0)
                     if (z.row === this.row && z.x < this.x + 80 && z.action !== 'die') {
                         this.active = true;
                     }
@@ -187,9 +180,7 @@
         }
 
         draw() {
-            // Si sale de la pantalla, ya no se dibuja (pero sigue existiendo hasta que limpiemos arrays, opcional)
             if (this.x > canvas.width) return; 
-            
             if (assets.extras.cortacesped) {
                 ctx.drawImage(assets.extras.cortacesped, this.x, this.y);
             }
@@ -247,15 +238,11 @@
     class Zombie {
         constructor() {
             this.row = Math.floor(Math.random() * ROWS);
-            
-            // CORRECCIÓN 2: Aparición fuera de escena
             this.x = canvas.width + 50; 
-            
             this.y = GRID_START_Y + (this.row * CELL_HEIGHT) + (CELL_HEIGHT / 2) - 40; 
             this.speed = 0.6; 
             this.health = 100;
             this.scale = 0.35;
-            
             this.frame = 0;
             this.action = 'walk'; 
             this.markedForDeletion = false;
@@ -263,34 +250,21 @@
         }
 
         update() {
-            // Animación
             if (frames % this.animSpeed === 0) {
-                // CORRECCIÓN 1: Manejo estricto de animación de muerte
                 if (this.action === 'die') {
-                    if (this.frame < assets.zombies.die.length - 1) {
-                        this.frame++;
-                    } else {
-                        // Si ya terminó la animación, marcar para borrar
-                        this.markedForDeletion = true;
-                    }
+                    if (this.frame < assets.zombies.die.length - 1) this.frame++;
+                    else this.markedForDeletion = true;
                 } else {
-                    // Loop normal para walk y eat
                     this.frame++;
                     let maxFrames = (this.action === 'eat') ? assets.zombies.eat.length : assets.zombies.walk.length;
                     if (this.frame >= maxFrames) this.frame = 0;
                 }
             }
 
-            // Lógica de Movimiento
             if (this.action === 'walk') {
                 this.x -= this.speed;
-                
-                // GAME OVER
-                if (this.x < -100) { // Si pasa el cortacesped y sale de pantalla
-                   gameOver = true;
-                }
+                if (this.x < -100) gameOver = true;
 
-                // Detectar planta
                 for (let p of plants) {
                     if (p.row === this.row && this.x > p.x - 30 && this.x < p.x + 30) {
                         this.action = 'eat';
@@ -320,7 +294,7 @@
             if (this.health <= 0) {
                 this.health = 0;
                 this.action = 'die';
-                this.frame = 0; // Reiniciar para empezar animación muerte desde el principio
+                this.frame = 0; 
             }
         }
 
@@ -330,9 +304,7 @@
             else if (this.action === 'eat') imgArr = assets.zombies.eat;
             else imgArr = assets.zombies.die;
 
-            // Seguridad por si el frame se desincroniza
             let img = imgArr[this.frame] || imgArr[imgArr.length - 1];
-            
             if (img) {
                 const w = img.width * this.scale;
                 const h = img.height * this.scale;
@@ -379,11 +351,9 @@
 
             if (this.animArr.length > 1 && frames % this.animSpeed === 0) {
                 this.frame++;
-                
                 if (this.type === 'lanzaguisantes' && this.isAttacking && this.frame === 27) {
                     peas.push(new Pea(this.x + 20, this.y - 40, this.row)); 
                 }
-
                 if (this.frame >= this.animArr.length) this.frame = 0;
             }
 
@@ -441,6 +411,12 @@
         mouseY = pos.y;
     });
 
+    canvas.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        selectedSeed = null;
+        isShovelActive = false;
+    });
+
     canvas.addEventListener('mousedown', e => {
         if (gameOver) return;
 
@@ -448,41 +424,79 @@
         const mx = pos.x;
         const my = pos.y;
 
+        // 1. Recoger Soles
         for (let i = suns.length - 1; i >= 0; i--) {
             if (Math.sqrt((mx - suns[i].x)**2 + (my - suns[i].y)**2) < 50) {
                 suns.splice(i, 1);
                 sunAmount += 25;
+                return; 
+            }
+        }
+
+        // 2. Click en Pala (CORREGIDO: DETECCIÓN EXACTA)
+        // Posición base de la pala en UI: 1173 (centrada aprox). Calculamos bordes reales.
+        if (assets.extras.pala) {
+            const pW = assets.extras.pala.width;
+            const pH = assets.extras.pala.height;
+            // Dibujamos en: 1173 - pW/2, 0.
+            const pX = 1173 - pW / 2;
+            const pY = 0;
+            
+            // Chequeo estricto del rectángulo de la imagen
+            if (mx >= pX && mx <= pX + pW && my >= pY && my <= pY + pH) {
+                isShovelActive = !isShovelActive;
+                selectedSeed = null;
                 return;
             }
         }
 
-        if (selectedSeed) {
-            if (mx >= GRID_START_X && mx <= GRID_END_X && my >= GRID_START_Y && my <= GRID_END_Y) {
-                const col = Math.floor((mx - GRID_START_X) / CELL_WIDTH);
-                const row = Math.floor((my - GRID_START_Y) / CELL_HEIGHT);
+        // 3. Acción en Grid
+        if (mx >= GRID_START_X && mx <= GRID_END_X && my >= GRID_START_Y && my <= GRID_END_Y) {
+            const col = Math.floor((mx - GRID_START_X) / CELL_WIDTH);
+            const row = Math.floor((my - GRID_START_Y) / CELL_HEIGHT);
+
+            if (isShovelActive) {
+                if (gridState[col][row] !== null) {
+                    for(let i=0; i<plants.length; i++) {
+                        if(plants[i].col === col && plants[i].row === row) {
+                            plants[i].markedForDeletion = true;
+                            gridState[col][row] = null;
+                            isShovelActive = false; 
+                            break;
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (selectedSeed) {
                 if (gridState[col][row] === null) {
                     plants.push(new Plant(selectedSeed.name, col, row));
                     gridState[col][row] = selectedSeed.name; 
                     sunAmount -= selectedSeed.cost;
+                    seeds[selectedSeed.index].timer = seeds[selectedSeed.index].cooldown;
                     selectedSeed = null; 
                 }
-            } else {
-                selectedSeed = null; 
+                return;
             }
-            return;
         }
 
+        // 4. Selección de Semilla
         let currentX = 200; 
         const w = assets.extras.envoltura ? assets.extras.envoltura.width : 100;
         const h = assets.extras.envoltura ? assets.extras.envoltura.height : 140;
+        
         seeds.forEach((seed, index) => {
             if (mx >= currentX && mx <= currentX + w && my >= 20 && my <= 20 + h) {
-                if (sunAmount >= seed.cost) {
+                if (sunAmount >= seed.cost && seed.timer <= 0) {
                     selectedSeed = { ...seed, index: index };
+                    isShovelActive = false;
                 }
             }
             currentX += w;
         });
+        
+        if (!selectedSeed && !isShovelActive) { }
     });
 
     // ==========================================
@@ -517,21 +531,27 @@
     function drawGame() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+        // Cooldowns
+        seeds.forEach(s => { if (s.timer > 0) s.timer--; });
+
         // UI
         if(assets.extras.background) ctx.drawImage(assets.extras.background, 0, 0);
         if(assets.extras.barraSemillas) ctx.drawImage(assets.extras.barraSemillas, 10, 10);
         
         const sunCenter = 10 + (190 / 2);
         if(assets.extras.solUI) ctx.drawImage(assets.extras.solUI, sunCenter - assets.extras.solUI.width/2, 0);
-        
         ctx.fillStyle = 'black'; ctx.font = 'bold 40px Arial'; ctx.textAlign = 'center';
         ctx.fillText(sunAmount, sunCenter, 195);
         
-        if(assets.extras.pala) ctx.drawImage(assets.extras.pala, 1173 - assets.extras.pala.width/2, 0);
+        // DIBUJAR PALA (UI)
+        const shovelUIX = 1173 - (assets.extras.pala ? assets.extras.pala.width/2 : 0);
+        if(assets.extras.pala) ctx.drawImage(assets.extras.pala, shovelUIX, 0);
         
+        // SEMILLAS
         let curX = 200;
         const wrW = assets.extras.envoltura ? assets.extras.envoltura.width : 50; 
-        
+        const wrH = assets.extras.envoltura ? assets.extras.envoltura.height : 140;
+
         seeds.forEach(s => {
             ctx.globalAlpha = sunAmount >= s.cost ? 1 : 0.5;
             if(assets.extras.envoltura) ctx.drawImage(assets.extras.envoltura, curX, 20);
@@ -541,43 +561,31 @@
             
             ctx.fillStyle = 'black'; ctx.font = 'bold 25px Arial';
             ctx.fillText(s.cost, curX + wrW/2, 183);
+            ctx.globalAlpha = 1;
+
+            if (s.timer > 0) {
+                const ratio = s.timer / s.cooldown; 
+                const coolH = wrH * ratio; 
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(curX, 20, wrW, coolH);
+            }
             curX += wrW;
         });
-        ctx.globalAlpha = 1;
 
-        // Grid
+        // GRID
         ctx.strokeStyle = 'rgba(255,0,0,0.3)'; ctx.lineWidth = 2; ctx.beginPath();
         for(let i=0; i<=COLS; i++) { let x = GRID_START_X + i*CELL_WIDTH; ctx.moveTo(x, GRID_START_Y); ctx.lineTo(x, GRID_END_Y); }
         for(let i=0; i<=ROWS; i++) { let y = GRID_START_Y + i*CELL_HEIGHT; ctx.moveTo(GRID_START_X, y); ctx.lineTo(GRID_END_X, y); }
         ctx.stroke();
 
-        // Entidades
+        // ENTIDADES
         lawnmowers.forEach(lm => { lm.update(); lm.draw(); });
+        plants.forEach((p, i) => { p.update(); p.draw(); if(p.markedForDeletion) plants.splice(i, 1); });
+        zombies.forEach((z, i) => { z.update(); z.draw(); if (z.markedForDeletion) zombies.splice(i, 1); });
+        peas.forEach((p, i) => { p.update(); p.draw(); if (p.markedForDeletion) peas.splice(i, 1); });
+        suns.forEach((s, i) => { s.update(); s.draw(); if (s.markedForDeletion) suns.splice(i, 1); });
 
-        plants.forEach((p, i) => { 
-            p.update(); 
-            p.draw(); 
-            if(p.markedForDeletion) plants.splice(i, 1);
-        });
-
-        zombies.forEach((z, i) => { 
-            z.update(); 
-            z.draw(); 
-            if (z.markedForDeletion) zombies.splice(i, 1);
-        });
-        
-        peas.forEach((p, i) => {
-            p.update();
-            p.draw();
-            if (p.markedForDeletion) peas.splice(i, 1);
-        });
-        
-        suns.forEach((s, i) => {
-            s.update();
-            s.draw();
-            if (s.markedForDeletion) suns.splice(i, 1);
-        });
-
+        // GAME OVER
         if (gameOver) {
             ctx.fillStyle = 'rgba(0,0,0,0.7)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -585,19 +593,23 @@
                 const goImg = assets.extras.gameOver;
                 ctx.drawImage(goImg, canvas.width/2 - goImg.width/2, canvas.height/2 - goImg.height/2);
             } else {
-                ctx.fillStyle = 'red';
-                ctx.font = '80px Arial';
-                ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+                ctx.fillStyle = 'red'; ctx.font = '80px Arial'; ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
             }
             return; 
         }
 
+        // GENERACIÓN
         if (frames % 350 === 0) suns.push(new Sun()); 
         if (frames % 600 === 0) zombies.push(new Zombie()); 
 
         checkCollisions();
 
-        if (selectedSeed) {
+        // CURSOR (CORREGIDO: Sin rotación y centrado)
+        if (isShovelActive && assets.extras.pala) {
+            const sImg = assets.extras.pala;
+            ctx.drawImage(sImg, mouseX - sImg.width/2, mouseY - sImg.height/2);
+        } 
+        else if (selectedSeed) {
             let img;
             if (selectedSeed.name === 'girasol') img = assets.plants.girasol[0];
             else if (selectedSeed.name === 'lanzaguisantes') img = assets.plants.lg_reposo[0];
