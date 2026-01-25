@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plants vs. Zombies - Debug Update</title>
+    <title>Plants vs. Zombies - Cereza Final Fix</title>
     <style>
         body {
             background-color: #333;
@@ -45,7 +45,7 @@
     // --- ESTADO DEL JUEGO ---
     let frames = 0;
     let gameOver = false;
-    let sunAmount = 150; 
+    let sunAmount = 550; 
     let suns = []; 
     let plants = []; 
     let zombies = [];
@@ -78,7 +78,8 @@
     const seeds = [
         { name: 'girasol', cost: 50, scale: 0.3, cooldown: 450, timer: 0 },
         { name: 'lanzaguisantes', cost: 100, scale: 0.35, cooldown: 450, timer: 0 },
-        { name: 'nuez', cost: 50, scale: 0.3, cooldown: 1800, timer: 0 }
+        { name: 'nuez', cost: 50, scale: 0.3, cooldown: 1800, timer: 0 },
+        { name: 'cereza', cost: 150, scale: 0.7, cooldown: 1800, timer: 0 }
     ];
 
     // ==========================================
@@ -86,7 +87,7 @@
     // ==========================================
     const assets = { 
         sunAnimation: [], 
-        plants: { girasol: [], lg_reposo: [], lg_ataque: [], nuez: [] },
+        plants: { girasol: [], lg_reposo: [], lg_ataque: [], nuez: [], cereza: [] },
         zombies: { walk: [], die: [], eat: [] },
         extras: {}
     };
@@ -102,7 +103,8 @@
         gameOver: 'recursos/tu pierdes.png',
         seed_girasol: 'recursos/semilla de girasol.png',
         seed_lanzaguisantes: 'recursos/semilla de lanza guisantes.png',
-        seed_nuez: 'recursos/semilla de nuez.png'
+        seed_nuez: 'recursos/semilla de nuez.png',
+        seed_cereza: 'recursos/semilla de cereza.png'
     };
 
     const addAnim = (prefix, start, end, digits, pathFn) => {
@@ -116,6 +118,8 @@
     addAnim('plant_girasol', 0, 57, 2, i => `recursos/girasol perturbador/girasol perturbador${i}.png`);
     addAnim('plant_lg_reposo', 0, 30, 2, i => `recursos/lg reposo perturbador/lg reposo perturbador${i}.png`);
     addAnim('plant_lg_ataque', 0, 45, 2, i => `recursos/lanza guisantes ataque/lanza guisantes ataque${i}.png`);
+    addAnim('plant_cereza', 0, 58, 2, i => `recursos/cereza/cereza${i}.png`);
+
     addAnim('zombie_walk', 0, 45, 2, i => `recursos/zombie caminata/zombie caminata${i}.png`);
     addAnim('zombie_die', 0, 49, 2, i => `recursos/zombie perdurbador cae/zombie perdurbador cae${i}.png`);
     addAnim('zombie_eat', 0, 35, 2, i => `recursos/zombie come/zombie come${i}.png`);
@@ -140,6 +144,7 @@
                 else if (key.startsWith('plant_girasol_')) assets.plants.girasol[parseInt(key.split('_')[2])] = img;
                 else if (key.startsWith('plant_lg_reposo_')) assets.plants.lg_reposo[parseInt(key.split('_')[3])] = img;
                 else if (key.startsWith('plant_lg_ataque_')) assets.plants.lg_ataque[parseInt(key.split('_')[3])] = img;
+                else if (key.startsWith('plant_cereza_')) assets.plants.cereza[parseInt(key.split('_')[2])] = img;
                 else if (key.startsWith('plant_nuez_')) assets.plants.nuez[0] = img;
                 else if (key.startsWith('zombie_walk_')) assets.zombies.walk[parseInt(key.split('_')[2])] = img;
                 else if (key.startsWith('zombie_die_')) assets.zombies.die[parseInt(key.split('_')[2])] = img;
@@ -162,52 +167,34 @@
             this.y = GRID_START_Y + (row * CELL_HEIGHT) + (CELL_HEIGHT / 2) - 40; 
             this.active = false;
             this.speed = 15; 
-            // Dimensiones para hitbox
             this.w = 70; this.h = 60;
         }
-
         update() {
             if (this.active) {
                 this.x += this.speed;
                 zombies.forEach(z => {
-                    if (z.row === this.row && z.action !== 'die') {
+                    if (z.row === this.row && z.action !== 'die' && z.action !== 'charred') {
                         if (Math.abs(z.x - this.x) < 60) z.takeDamage(9999);
                     }
                 });
             } else {
                 zombies.forEach(z => {
-                    if (z.row === this.row && z.x < this.x + 80 && z.action !== 'die') {
+                    if (z.row === this.row && z.x < this.x + 80 && z.action !== 'die' && z.action !== 'charred') {
                         this.active = true;
                     }
                 });
             }
         }
-
         draw() {
             if (this.x > canvas.width) return; 
-            
-            // Dibujar Imagen
-            if (assets.extras.cortacesped) {
-                ctx.drawImage(assets.extras.cortacesped, this.x, this.y);
-            }
-            
-            // Dibujar Hitbox (Debug) Centrada
+            if (assets.extras.cortacesped) ctx.drawImage(assets.extras.cortacesped, this.x, this.y);
             if (isDebug) {
                 ctx.strokeStyle = 'blue'; ctx.lineWidth = 2;
-                
-                // Intentamos centrar la hitbox en la imagen visualmente
-                let drawX = this.x;
-                let drawY = this.y;
-                
-                // Si tenemos la imagen, usamos sus dimensiones para centrar mejor
+                let drawX = this.x; let drawY = this.y;
                 if (assets.extras.cortacesped) {
-                   const imgW = assets.extras.cortacesped.width;
-                   const imgH = assets.extras.cortacesped.height;
-                   // Offset para que la caja azul quede en el medio de la imagen
-                   drawX = this.x + (imgW - this.w) / 2;
-                   drawY = this.y + (imgH - this.h) / 2;
+                   const imgW = assets.extras.cortacesped.width; const imgH = assets.extras.cortacesped.height;
+                   drawX = this.x + (imgW - this.w) / 2; drawY = this.y + (imgH - this.h) / 2;
                 }
-                
                 ctx.strokeRect(drawX, drawY, this.w, this.h);
             }
         }
@@ -224,8 +211,6 @@
             this.scale = 0.5;
             this.markedForDeletion = false;
             this.isNatural = isNatural;
-            
-            // CAMBIO: Radio más grande para facilitar clic
             this.radius = 60; 
         }
         update() {
@@ -244,12 +229,9 @@
             const w = img.width * this.scale;
             const h = img.height * this.scale;
             ctx.drawImage(img, this.x - w/2, this.y - h/2, w, h);
-            
             if (isDebug) {
                 ctx.strokeStyle = 'yellow'; ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
-                ctx.stroke();
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.stroke();
             }
         }
     }
@@ -287,9 +269,21 @@
             this.action = 'walk'; 
             this.markedForDeletion = false;
             this.animSpeed = 2;
+            this.charredTimer = 0; // Para el fade out
+            this.charredDuration = 60; // 2 segundos
         }
 
         update() {
+            // Si está carbonizado (muerto por explosión), solo maneja el desvanecimiento
+            if (this.action === 'charred') {
+                this.charredTimer++;
+                if (this.charredTimer >= this.charredDuration) {
+                    this.markedForDeletion = true;
+                }
+                return; // No se mueve ni anima
+            }
+
+            // Animación Normal
             if (frames % this.animSpeed === 0) {
                 if (this.action === 'die') {
                     if (this.frame < assets.zombies.die.length - 1) this.frame++;
@@ -301,6 +295,7 @@
                 }
             }
 
+            // Movimiento
             if (this.action === 'walk') {
                 this.x -= this.speed;
                 if (this.x < -100) gameOver = true;
@@ -328,37 +323,59 @@
             }
         }
 
-        takeDamage(amount) {
-            if (this.action === 'die') return;
+        takeDamage(amount, type) {
+            if (this.action === 'die' || this.action === 'charred') return;
             this.health -= amount;
+            
             if (this.health <= 0) {
                 this.health = 0;
-                this.action = 'die';
-                this.frame = 0; 
+                
+                if (type === 'explosion') {
+                    // Muerte por Cereza: No hay animación de caer, solo oscurecer
+                    this.action = 'charred';
+                    // Mantener el frame actual o usar uno por defecto de caminar
+                    // Para evitar saltos raros, dejamos el frame donde quedó
+                } else {
+                    // Muerte Normal
+                    this.action = 'die';
+                    this.frame = 0; 
+                }
             }
         }
 
         draw() {
             let imgArr;
-            if (this.action === 'walk') imgArr = assets.zombies.walk;
+            // Si está carbonizado, usamos la imagen de caminar como base (congelada)
+            if (this.action === 'charred') imgArr = assets.zombies.walk; 
+            else if (this.action === 'walk') imgArr = assets.zombies.walk;
             else if (this.action === 'eat') imgArr = assets.zombies.eat;
             else imgArr = assets.zombies.die;
 
-            let img = imgArr[this.frame] || imgArr[imgArr.length - 1];
+            // Seguridad de frames
+            let safeFrame = this.frame;
+            if (safeFrame >= imgArr.length) safeFrame = 0;
+
+            let img = imgArr[safeFrame];
+            
             if (img) {
                 const w = img.width * this.scale;
                 const h = img.height * this.scale;
+                
+                ctx.save(); // Guardar estado contexto
+                
+                if (this.action === 'charred') {
+                    // Efecto de quemado: Negro y Desvanecimiento
+                    ctx.filter = "brightness(0)"; 
+                    ctx.globalAlpha = 1 - (this.charredTimer / this.charredDuration);
+                }
+
                 ctx.drawImage(img, this.x - w/2, this.y - h/2, w, h);
                 
+                ctx.restore(); // Restaurar (quitar filtros)
+
                 if (isDebug) {
                     ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
                     ctx.strokeRect(this.x - 30, this.y - 60, 60, 120); 
-
-                    ctx.strokeStyle = 'blue';
-                    ctx.beginPath();
-                    ctx.moveTo(this.x, this.y);
-                    ctx.lineTo(this.x - 30, this.y); 
-                    ctx.stroke();
                 }
             }
         }
@@ -383,7 +400,11 @@
                 this.scale = 0.35;
                 this.animArr = assets.plants.lg_reposo;
                 this.isAttacking = false;
-            } else {
+            } else if (type === 'cereza') { 
+                this.scale = 0.7; 
+                this.animArr = assets.plants.cereza;
+                this.health = 999; 
+            } else { // Nuez
                 this.scale = 0.3;
                 this.health = 400; 
                 this.animArr = assets.plants.nuez;
@@ -402,10 +423,34 @@
 
             if (this.animArr.length > 1 && frames % this.animSpeed === 0) {
                 this.frame++;
+                
+                // DISPARO
                 if (this.type === 'lanzaguisantes' && this.isAttacking && this.frame === 27) {
                     peas.push(new Pea(this.x + 20, this.y - 40, this.row)); 
                 }
-                if (this.frame >= this.animArr.length) this.frame = 0;
+
+                // EXPLOSIÓN CEREZA
+                if (this.type === 'cereza' && this.frame === 23) {
+                    zombies.forEach(z => {
+                        let zCol = Math.floor((z.x - GRID_START_X) / CELL_WIDTH);
+                        if (zCol >= this.col - 1 && zCol <= this.col + 1 &&
+                            z.row >= this.row - 1 && z.row <= this.row + 1) {
+                            z.takeDamage(9999, 'explosion');
+                        }
+                    });
+                }
+
+                // FIN ANIMACIÓN
+                if (this.frame >= this.animArr.length) {
+                    if (this.type === 'cereza') {
+                        // Corrección Glitch: Marcar para borrar INMEDIATAMENTE
+                        this.markedForDeletion = true;
+                        gridState[this.col][this.row] = null;
+                        return; // Salir para evitar dibujo incorrecto
+                    } else {
+                        this.frame = 0;
+                    }
+                }
             }
 
             if (this.type === 'girasol') {
@@ -419,7 +464,7 @@
             if (this.type === 'lanzaguisantes') {
                 let enemyFound = false;
                 for (let z of zombies) {
-                    if (z.row === this.row && z.x > this.x && z.action !== 'die') {
+                    if (z.row === this.row && z.x > this.x && z.action !== 'die' && z.action !== 'charred') {
                         enemyFound = true;
                         break;
                     }
@@ -451,12 +496,17 @@
             if (isDebug) {
                 ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
                 ctx.strokeRect(this.x - 30, this.y - 30, 60, 60); 
+                if (this.type === 'cereza') {
+                    ctx.strokeStyle = 'orange';
+                    const rangeSize = CELL_WIDTH * 3;
+                    ctx.strokeRect(this.x - rangeSize/2, this.y - rangeSize/2, rangeSize, rangeSize);
+                }
             }
         }
     }
 
     // ==========================================
-    // 4. INTERACCIÓN
+    // 4. INTERACCIÓN Y CONTROLES
     // ==========================================
     let mouseX = 0;
     let mouseY = 0;
@@ -464,11 +514,9 @@
     window.addEventListener('keydown', e => {
         if (e.key === 'd' || e.key === 'D') {
             isDebug = !isDebug;
-            console.log("Debug Mode:", isDebug);
         }
         if (e.key === 'p' || e.key === 'P') {
             isPaused = !isPaused;
-            console.log("Paused:", isPaused);
         }
     });
 
@@ -491,9 +539,8 @@
         const mx = pos.x;
         const my = pos.y;
 
-        // 1. Recoger Soles (CAMBIO: Usamos el radio dinámico)
+        // Recoger Soles
         for (let i = suns.length - 1; i >= 0; i--) {
-            // Usamos s.radius (60)
             if (Math.sqrt((mx - suns[i].x)**2 + (my - suns[i].y)**2) < suns[i].radius) {
                 suns.splice(i, 1);
                 sunAmount += 25;
@@ -501,13 +548,12 @@
             }
         }
 
-        // 2. Click en Pala
+        // Click en Pala
         if (assets.extras.pala) {
             const pW = assets.extras.pala.width;
             const pH = assets.extras.pala.height;
             const pX = 1173 - pW / 2;
             const pY = 0;
-            
             if (mx >= pX && mx <= pX + pW && my >= pY && my <= pY + pH) {
                 isShovelActive = !isShovelActive;
                 selectedSeed = null;
@@ -515,7 +561,7 @@
             }
         }
 
-        // 3. Acción en Grid
+        // Acción en Grid
         if (mx >= GRID_START_X && mx <= GRID_END_X && my >= GRID_START_Y && my <= GRID_END_Y) {
             const col = Math.floor((mx - GRID_START_X) / CELL_WIDTH);
             const row = Math.floor((my - GRID_START_Y) / CELL_HEIGHT);
@@ -546,11 +592,10 @@
             }
         }
 
-        // 4. Selección de Semilla
+        // Selección de Semilla
         let currentX = 200; 
         const w = assets.extras.envoltura ? assets.extras.envoltura.width : 100;
         const h = assets.extras.envoltura ? assets.extras.envoltura.height : 140;
-        
         seeds.forEach((seed, index) => {
             if (mx >= currentX && mx <= currentX + w && my >= 20 && my <= 20 + h) {
                 if (sunAmount >= seed.cost && seed.timer <= 0) {
@@ -571,10 +616,10 @@
             let p = peas[i];
             let hit = false;
             for (let z of zombies) {
-                if (z.action === 'die') continue; 
+                if (z.action === 'die' || z.action === 'charred') continue; 
                 if (z.row === p.row) { 
                     if (p.x > z.x - 40 && p.x < z.x + 40) {
-                        z.takeDamage(20); 
+                        z.takeDamage(20, 'projectile'); 
                         hit = true;
                         break; 
                     }
@@ -656,7 +701,6 @@
             curX += wrW;
         });
 
-        // CAMBIO: Grid solo en modo Debug
         if (isDebug) {
             ctx.strokeStyle = 'rgba(255,0,0,0.3)'; ctx.lineWidth = 2; ctx.beginPath();
             for(let i=0; i<=COLS; i++) { let x = GRID_START_X + i*CELL_WIDTH; ctx.moveTo(x, GRID_START_Y); ctx.lineTo(x, GRID_END_Y); }
@@ -698,6 +742,7 @@
             let img;
             if (selectedSeed.name === 'girasol') img = assets.plants.girasol[0];
             else if (selectedSeed.name === 'lanzaguisantes') img = assets.plants.lg_reposo[0];
+            else if (selectedSeed.name === 'cereza') img = assets.plants.cereza[0]; 
             else img = assets.plants.nuez[0];
             if (img) {
                 ctx.globalAlpha = 0.6;
