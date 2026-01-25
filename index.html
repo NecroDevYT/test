@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Plants vs. Zombies - Nivel 1 (Pala Fix)</title>
+    <title>Plants vs. Zombies - Debug Update</title>
     <style>
         body {
             background-color: #333;
@@ -53,9 +53,11 @@
     let lawnmowers = []; 
     let gridState = []; 
     
-    // Estados de Interacción
     let selectedSeed = null; 
     let isShovelActive = false; 
+
+    let isPaused = false;
+    let isDebug = false;
 
     // Grid
     const GRID_START_X = 90;
@@ -72,7 +74,7 @@
         for (let r = 0; r < ROWS; r++) gridState[c][r] = null;
     }
 
-    // Semillas (Cooldown en frames)
+    // Semillas
     const seeds = [
         { name: 'girasol', cost: 50, scale: 0.3, cooldown: 450, timer: 0 },
         { name: 'lanzaguisantes', cost: 100, scale: 0.35, cooldown: 450, timer: 0 },
@@ -160,6 +162,8 @@
             this.y = GRID_START_Y + (row * CELL_HEIGHT) + (CELL_HEIGHT / 2) - 40; 
             this.active = false;
             this.speed = 15; 
+            // Dimensiones para hitbox
+            this.w = 70; this.h = 60;
         }
 
         update() {
@@ -181,8 +185,30 @@
 
         draw() {
             if (this.x > canvas.width) return; 
+            
+            // Dibujar Imagen
             if (assets.extras.cortacesped) {
                 ctx.drawImage(assets.extras.cortacesped, this.x, this.y);
+            }
+            
+            // Dibujar Hitbox (Debug) Centrada
+            if (isDebug) {
+                ctx.strokeStyle = 'blue'; ctx.lineWidth = 2;
+                
+                // Intentamos centrar la hitbox en la imagen visualmente
+                let drawX = this.x;
+                let drawY = this.y;
+                
+                // Si tenemos la imagen, usamos sus dimensiones para centrar mejor
+                if (assets.extras.cortacesped) {
+                   const imgW = assets.extras.cortacesped.width;
+                   const imgH = assets.extras.cortacesped.height;
+                   // Offset para que la caja azul quede en el medio de la imagen
+                   drawX = this.x + (imgW - this.w) / 2;
+                   drawY = this.y + (imgH - this.h) / 2;
+                }
+                
+                ctx.strokeRect(drawX, drawY, this.w, this.h);
             }
         }
     }
@@ -198,6 +224,9 @@
             this.scale = 0.5;
             this.markedForDeletion = false;
             this.isNatural = isNatural;
+            
+            // CAMBIO: Radio más grande para facilitar clic
+            this.radius = 60; 
         }
         update() {
             if (frames % 2 === 0) {
@@ -215,6 +244,13 @@
             const w = img.width * this.scale;
             const h = img.height * this.scale;
             ctx.drawImage(img, this.x - w/2, this.y - h/2, w, h);
+            
+            if (isDebug) {
+                ctx.strokeStyle = 'yellow'; ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+                ctx.stroke();
+            }
         }
     }
 
@@ -232,6 +268,10 @@
         }
         draw() {
             if(assets.extras.guisante) ctx.drawImage(assets.extras.guisante, this.x, this.y);
+            if (isDebug) {
+                ctx.strokeStyle = 'yellow'; ctx.lineWidth = 2;
+                ctx.strokeRect(this.x, this.y, 28, 28);
+            }
         }
     }
 
@@ -309,6 +349,17 @@
                 const w = img.width * this.scale;
                 const h = img.height * this.scale;
                 ctx.drawImage(img, this.x - w/2, this.y - h/2, w, h);
+                
+                if (isDebug) {
+                    ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
+                    ctx.strokeRect(this.x - 30, this.y - 60, 60, 120); 
+
+                    ctx.strokeStyle = 'blue';
+                    ctx.beginPath();
+                    ctx.moveTo(this.x, this.y);
+                    ctx.lineTo(this.x - 30, this.y); 
+                    ctx.stroke();
+                }
             }
         }
     }
@@ -396,6 +447,11 @@
             const w = img.width * this.scale;
             const h = img.height * this.scale;
             ctx.drawImage(img, this.x - w/2, this.y - h/2, w, h);
+            
+            if (isDebug) {
+                ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
+                ctx.strokeRect(this.x - 30, this.y - 30, 60, 60); 
+            }
         }
     }
 
@@ -404,6 +460,17 @@
     // ==========================================
     let mouseX = 0;
     let mouseY = 0;
+
+    window.addEventListener('keydown', e => {
+        if (e.key === 'd' || e.key === 'D') {
+            isDebug = !isDebug;
+            console.log("Debug Mode:", isDebug);
+        }
+        if (e.key === 'p' || e.key === 'P') {
+            isPaused = !isPaused;
+            console.log("Paused:", isPaused);
+        }
+    });
 
     canvas.addEventListener('mousemove', e => {
         const pos = getMousePos(e);
@@ -418,31 +485,29 @@
     });
 
     canvas.addEventListener('mousedown', e => {
-        if (gameOver) return;
+        if (gameOver || isPaused) return;
 
         const pos = getMousePos(e);
         const mx = pos.x;
         const my = pos.y;
 
-        // 1. Recoger Soles
+        // 1. Recoger Soles (CAMBIO: Usamos el radio dinámico)
         for (let i = suns.length - 1; i >= 0; i--) {
-            if (Math.sqrt((mx - suns[i].x)**2 + (my - suns[i].y)**2) < 50) {
+            // Usamos s.radius (60)
+            if (Math.sqrt((mx - suns[i].x)**2 + (my - suns[i].y)**2) < suns[i].radius) {
                 suns.splice(i, 1);
                 sunAmount += 25;
                 return; 
             }
         }
 
-        // 2. Click en Pala (CORREGIDO: DETECCIÓN EXACTA)
-        // Posición base de la pala en UI: 1173 (centrada aprox). Calculamos bordes reales.
+        // 2. Click en Pala
         if (assets.extras.pala) {
             const pW = assets.extras.pala.width;
             const pH = assets.extras.pala.height;
-            // Dibujamos en: 1173 - pW/2, 0.
             const pX = 1173 - pW / 2;
             const pY = 0;
             
-            // Chequeo estricto del rectángulo de la imagen
             if (mx >= pX && mx <= pX + pW && my >= pY && my <= pY + pH) {
                 isShovelActive = !isShovelActive;
                 selectedSeed = null;
@@ -495,8 +560,6 @@
             }
             currentX += w;
         });
-        
-        if (!selectedSeed && !isShovelActive) { }
     });
 
     // ==========================================
@@ -531,10 +594,28 @@
     function drawGame() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // Cooldowns
-        seeds.forEach(s => { if (s.timer > 0) s.timer--; });
+        // UPDATE
+        if (!isPaused && !gameOver) {
+            seeds.forEach(s => { if (s.timer > 0) s.timer--; });
+            lawnmowers.forEach(lm => lm.update());
+            plants.forEach(p => p.update());
+            zombies.forEach(z => z.update());
+            peas.forEach(p => p.update());
+            suns.forEach(s => s.update());
 
-        // UI
+            plants = plants.filter(p => !p.markedForDeletion);
+            zombies = zombies.filter(z => !z.markedForDeletion);
+            peas = peas.filter(p => !p.markedForDeletion);
+            suns = suns.filter(s => !s.markedForDeletion);
+
+            if (frames % 350 === 0) suns.push(new Sun()); 
+            if (frames % 600 === 0) zombies.push(new Zombie()); 
+
+            checkCollisions();
+            frames++;
+        }
+
+        // DRAW
         if(assets.extras.background) ctx.drawImage(assets.extras.background, 0, 0);
         if(assets.extras.barraSemillas) ctx.drawImage(assets.extras.barraSemillas, 10, 10);
         
@@ -543,11 +624,13 @@
         ctx.fillStyle = 'black'; ctx.font = 'bold 40px Arial'; ctx.textAlign = 'center';
         ctx.fillText(sunAmount, sunCenter, 195);
         
-        // DIBUJAR PALA (UI)
         const shovelUIX = 1173 - (assets.extras.pala ? assets.extras.pala.width/2 : 0);
         if(assets.extras.pala) ctx.drawImage(assets.extras.pala, shovelUIX, 0);
-        
-        // SEMILLAS
+        if (isDebug) { 
+            ctx.strokeStyle = 'green'; ctx.lineWidth = 2;
+            ctx.strokeRect(shovelUIX, 0, assets.extras.pala ? assets.extras.pala.width : 80, assets.extras.pala ? assets.extras.pala.height : 80);
+        }
+
         let curX = 200;
         const wrW = assets.extras.envoltura ? assets.extras.envoltura.width : 50; 
         const wrH = assets.extras.envoltura ? assets.extras.envoltura.height : 140;
@@ -555,37 +638,47 @@
         seeds.forEach(s => {
             ctx.globalAlpha = sunAmount >= s.cost ? 1 : 0.5;
             if(assets.extras.envoltura) ctx.drawImage(assets.extras.envoltura, curX, 20);
-            
             let pImg = assets.extras['seed_' + s.name];
             if(pImg) ctx.drawImage(pImg, curX + (wrW - pImg.width)/2, 0);
-            
             ctx.fillStyle = 'black'; ctx.font = 'bold 25px Arial';
             ctx.fillText(s.cost, curX + wrW/2, 183);
             ctx.globalAlpha = 1;
 
             if (s.timer > 0) {
                 const ratio = s.timer / s.cooldown; 
-                const coolH = wrH * ratio; 
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-                ctx.fillRect(curX, 20, wrW, coolH);
+                ctx.fillRect(curX, 20, wrW, wrH * ratio);
+            }
+            if (isDebug) { 
+                ctx.strokeStyle = 'green'; ctx.lineWidth = 2;
+                ctx.strokeRect(curX, 20, wrW, wrH);
             }
             curX += wrW;
         });
 
-        // GRID
-        ctx.strokeStyle = 'rgba(255,0,0,0.3)'; ctx.lineWidth = 2; ctx.beginPath();
-        for(let i=0; i<=COLS; i++) { let x = GRID_START_X + i*CELL_WIDTH; ctx.moveTo(x, GRID_START_Y); ctx.lineTo(x, GRID_END_Y); }
-        for(let i=0; i<=ROWS; i++) { let y = GRID_START_Y + i*CELL_HEIGHT; ctx.moveTo(GRID_START_X, y); ctx.lineTo(GRID_END_X, y); }
-        ctx.stroke();
+        // CAMBIO: Grid solo en modo Debug
+        if (isDebug) {
+            ctx.strokeStyle = 'rgba(255,0,0,0.3)'; ctx.lineWidth = 2; ctx.beginPath();
+            for(let i=0; i<=COLS; i++) { let x = GRID_START_X + i*CELL_WIDTH; ctx.moveTo(x, GRID_START_Y); ctx.lineTo(x, GRID_END_Y); }
+            for(let i=0; i<=ROWS; i++) { let y = GRID_START_Y + i*CELL_HEIGHT; ctx.moveTo(GRID_START_X, y); ctx.lineTo(GRID_END_X, y); }
+            ctx.stroke();
+        }
 
-        // ENTIDADES
-        lawnmowers.forEach(lm => { lm.update(); lm.draw(); });
-        plants.forEach((p, i) => { p.update(); p.draw(); if(p.markedForDeletion) plants.splice(i, 1); });
-        zombies.forEach((z, i) => { z.update(); z.draw(); if (z.markedForDeletion) zombies.splice(i, 1); });
-        peas.forEach((p, i) => { p.update(); p.draw(); if (p.markedForDeletion) peas.splice(i, 1); });
-        suns.forEach((s, i) => { s.update(); s.draw(); if (s.markedForDeletion) suns.splice(i, 1); });
+        lawnmowers.forEach(lm => lm.draw());
+        plants.forEach(p => p.draw());
+        zombies.forEach(z => z.draw());
+        peas.forEach(p => p.draw());
+        suns.forEach(s => s.draw());
 
-        // GAME OVER
+        if (isPaused && !gameOver) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white'; ctx.font = '80px Arial'; ctx.textAlign = 'center';
+            ctx.fillText("PAUSA", canvas.width/2, canvas.height/2);
+            ctx.font = '30px Arial';
+            ctx.fillText("(Presiona 'P' para continuar)", canvas.width/2, canvas.height/2 + 50);
+        }
+
         if (gameOver) {
             ctx.fillStyle = 'rgba(0,0,0,0.7)';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -593,28 +686,19 @@
                 const goImg = assets.extras.gameOver;
                 ctx.drawImage(goImg, canvas.width/2 - goImg.width/2, canvas.height/2 - goImg.height/2);
             } else {
-                ctx.fillStyle = 'red'; ctx.font = '80px Arial'; ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+                ctx.fillStyle = 'red'; ctx.font = '80px Arial'; ctx.textAlign = 'center';
+                ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
             }
-            return; 
         }
 
-        // GENERACIÓN
-        if (frames % 350 === 0) suns.push(new Sun()); 
-        if (frames % 600 === 0) zombies.push(new Zombie()); 
-
-        checkCollisions();
-
-        // CURSOR (CORREGIDO: Sin rotación y centrado)
         if (isShovelActive && assets.extras.pala) {
             const sImg = assets.extras.pala;
             ctx.drawImage(sImg, mouseX - sImg.width/2, mouseY - sImg.height/2);
-        } 
-        else if (selectedSeed) {
+        } else if (selectedSeed) {
             let img;
             if (selectedSeed.name === 'girasol') img = assets.plants.girasol[0];
             else if (selectedSeed.name === 'lanzaguisantes') img = assets.plants.lg_reposo[0];
             else img = assets.plants.nuez[0];
-            
             if (img) {
                 ctx.globalAlpha = 0.6;
                 const s = selectedSeed.scale;
@@ -623,7 +707,6 @@
             }
         }
 
-        frames++;
         requestAnimationFrame(drawGame);
     }
 
