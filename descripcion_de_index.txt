@@ -1,0 +1,90 @@
+Descripción de `index.html`
+
+Resumen
+Este archivo implementa un minijuego estilo Plants vs. Zombies completamente en un único HTML, usando un elemento `<canvas>` y JavaScript (sin librerías externas). El juego dibuja y actualiza todo en tiempo real sobre el canvas, cargando sprites desde la carpeta `recursos/`.
+
+Estructura HTML
+- `<!DOCTYPE html>` y `<html lang="es">`.
+- En `<head>`:
+  - Metadatos (`charset` y `viewport`).
+  - `<title>`: “Plants vs. Zombies - Cereza Final Fix”.
+  - Estilos CSS:
+    - Centra el canvas en pantalla (flex), fondo oscuro, ocupa toda la altura de la ventana, y limita el tamaño del canvas con sombra.
+- En `<body>`:
+  - Un `<canvas id="gameCanvas" width="1636" height="1332"></canvas>` donde se renderiza el juego.
+  - Un bloque `<script>` con toda la lógica.
+
+1) Configuración y estado del juego
+- Se obtiene el contexto 2D del canvas (`ctx`).
+- `getMousePos(evt)` convierte coordenadas del mouse a coordenadas internas del canvas (considerando escalado CSS).
+- Variables principales:
+  - Control de tiempo/estado: `frames`, `gameOver`, `isPaused`, `isDebug`.
+  - Recursos/entidades: `suns`, `plants`, `zombies`, `peas`, `lawnmowers`.
+  - Economía: `sunAmount` (comienza en 550).
+  - Interacción: `selectedSeed` (semilla seleccionada) e `isShovelActive` (pala).
+- Definición del grid:
+  - Constantes `GRID_START_*`, `GRID_END_*`, `COLS=9`, `ROWS=5` y celdas `CELL_WIDTH` / `CELL_HEIGHT`.
+  - `gridState[col][row]` guarda qué planta hay en cada celda (o `null`).
+- Semillas disponibles (`seeds`):
+  - `girasol` (50), `lanzaguisantes` (100), `nuez` (50), `cereza` (150), cada una con escala y cooldown.
+
+2) Gestor de recursos (sprites)
+- `assets` agrupa imágenes animadas y UI (sol, plantas, zombies y extras).
+- `imageSources` define rutas a imágenes base (fondo, barra de semillas, pala, sol UI, envoltura, cortacésped, guisante, pantalla de game over, y sprites de semillas).
+- `addAnim(...)` genera automáticamente listas de frames para animaciones (sol, plantas y zombies) construyendo rutas por patrón.
+- `loadImages(callback)` carga todas las imágenes y, al terminar, ejecuta `callback` para iniciar el juego.
+
+3) Clases principales
+- `Lawnmower` (cortacésped):
+  - Uno por fila. Se activa cuando un zombie se acerca y avanza eliminando zombies en su fila.
+- `Sun` (sol):
+  - Puede caer “natural” desde arriba o aparecer en la posición de un girasol.
+  - Tiene animación por frames y se puede recolectar haciendo click dentro de su radio.
+- `Pea` (guisante/proyectil):
+  - Se desplaza a la derecha y se elimina al salir de pantalla.
+- `Zombie`:
+  - Se genera en una fila aleatoria, camina hacia la izquierda, “come” plantas al contactar y puede morir.
+  - Incluye un modo de muerte especial `charred` para explosión (oscurecer + desvanecer) y modo `die` para muerte normal.
+- `Plant`:
+  - Soporta tipos: `girasol`, `lanzaguisantes`, `nuez`, `cereza`.
+  - `girasol`: produce soles cada cierto intervalo.
+  - `lanzaguisantes`: cambia entre reposo/ataque si detecta zombies en su fila y dispara un guisante en un frame específico.
+  - `nuez`: mucha vida (tanque).
+  - `cereza`: reproduce animación y explota alrededor dañando zombies en un área 3x3 centrada en su celda.
+    - Al terminar la animación, se marca para borrado inmediatamente (comentado como corrección de glitch).
+
+4) Interacción y controles
+- Teclado:
+  - `D`: alterna modo debug (`isDebug`) dibujando hitboxes y guías.
+  - `P`: pausa/reanuda (`isPaused`).
+- Mouse:
+  - `mousemove`: actualiza `mouseX/mouseY` (para dibujar previews y pala).
+  - `click derecho` (context menu): cancela selección de semilla y desactiva pala.
+  - `mousedown` (click izquierdo):
+    - Recolecta soles si haces click sobre ellos (+25 soles).
+    - Click en icono de pala: activa/desactiva `isShovelActive`.
+    - Click en la grilla:
+      - Si la pala está activa, elimina la planta de la celda.
+      - Si hay una semilla seleccionada y la celda está vacía, planta y descuenta el costo, iniciando cooldown.
+    - Click en la barra de semillas: selecciona una semilla si hay soles suficientes y el cooldown terminó.
+
+5) Bucle principal (game loop)
+- `checkCollisions()` detecta impactos de guisantes con zombies de la misma fila y aplica daño.
+- `initGame()` crea un cortacésped por fila.
+- `drawGame()`:
+  - Si no está pausado ni es game over:
+    - Actualiza cooldowns.
+    - Actualiza todas las entidades.
+    - Filtra y elimina entidades marcadas.
+    - Genera soles y zombies periódicamente según `frames`.
+    - Incrementa `frames`.
+  - Dibuja:
+    - Fondo, UI de semillas, contador de soles, pala.
+    - Grilla y depuración (si está activo).
+    - Entidades (cortacésped, plantas, zombies, proyectiles, soles).
+    - Overlays de pausa y game over.
+    - Preview de la semilla seleccionada o pala siguiendo el mouse.
+- Arranque:
+  - `loadImages(() => { initGame(); drawGame(); });`
+
+En resumen, `index.html` contiene toda la lógica de un juego 2D en canvas: carga de sprites, entidades, interacción con el usuario, actualización por frames y renderizado continuo.
