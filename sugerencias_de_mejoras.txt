@@ -1,0 +1,53 @@
+Sugerencias de mejoras (próxima iteración)
+=========================================
+
+1) Experiencia de usuario (UX)
+- Pantalla de carga real: mostrar progreso (assetsLoaded/totalAssets), un spinner y mensajes de error cuando falten recursos.
+- Menú inicial: botón “Jugar”, “Reiniciar”, “Opciones” y un selector de dificultad.
+- Controles visibles: overlay con atajos (P=pausa, D=debug, clic derecho=cancelar, pala=remover).
+- Soporte móvil/táctil: reemplazar “clic derecho” por un botón UI (Cancelar) y mejorar hitboxes para pantallas pequeñas.
+- Accesibilidad: colores con mayor contraste, opción de “modo alto contraste”, y texto de UI escalable.
+
+2) Rendimiento
+- Reducir trabajo por frame:
+  - Evitar `zombies.forEach` anidados cuando sea posible (por ejemplo, indexar zombies por fila).
+  - En colisiones, cortar temprano y/o usar estructuras por fila (peasPorFila, zombiesPorFila).
+- Limitar `ctx.filter` y cambios de estado del canvas (save/restore) solo cuando sea necesario.
+- Usar `OffscreenCanvas`/doble buffer (si aplica) para reducir parpadeos y mejorar FPS.
+
+3) Arquitectura y mantenibilidad
+- Separar el código en archivos: `game.js`, `assets.js`, `entities/*.js` y dejar `index.html` más limpio.
+- Convertir “config” en un objeto central (tamaños, tiempos, costos, velocidades) para balanceo.
+- Estandarizar nombres y constantes (p. ej. evitar “magic numbers” como 350/600/720 en el loop).
+- Agregar un sistema de estados: `MENU`, `PLAYING`, `PAUSED`, `GAME_OVER`.
+
+4) Robustez
+- Manejo de errores de recursos:
+  - Si una imagen falla, usar un placeholder (rectángulo/ícono) y registrar cuáles faltan.
+  - Verificar que `assets.sunAnimation.length` no sea 0 antes de usarlo.
+- Evitar posibles desbordes de índices: asegurar `col`/`row` en rango en todas las interacciones.
+
+5) Responsive y escalado
+- Implementar escalado del canvas basado en tamaño de pantalla (manteniendo aspecto), y adaptar GRID_* según resolución.
+- Considerar usar “logical resolution” interna y escalar al tamaño físico del viewport.
+
+6) Gameplay y balance
+- Variar oleadas: spawns por tiempo + probabilidad según progreso (frames) y dificultad.
+- Agregar más tipos de zombies/plantas o habilidades (zombie rápido, zombie con cono; planta de hielo, etc.).
+- Indicadores: mostrar cooldown de semillas más claro (porcentaje o texto), y feedback al intentar plantar sin soles.
+- Recompensas: sistema de puntuación/monedas, y resumen al perder.
+
+7) Sonido y feedback
+- Efectos de sonido (recoger sol, disparo, explosión, zombie mordiendo) y música opcional con control de volumen.
+- Pequeñas animaciones/partículas: impacto del guisante, explosión de la cereza, “shake” de pantalla suave.
+
+8) Debug y herramientas
+- Panel debug (en vez de solo tecla D): mostrar FPS, conteo de entidades, fila/col del mouse, y toggles.
+- Añadir un modo “determinista” (seed de RNG) para reproducir bugs.
+
+9) Calidad del código
+- Añadir comentarios para secciones críticas (colisiones, estados, timers) y documentar el formato esperado de recursos.
+- Considerar TypeScript o JSDoc para tipos (Plant, Zombie, Sun) y evitar errores de mantenimiento.
+
+Notas rápidas
+- Actualmente el juego está implementado en un único archivo HTML con un loop constante (`requestAnimationFrame`). Separar módulos y añadir estados hará más fácil crecer el proyecto.
