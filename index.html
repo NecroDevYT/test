@@ -59,6 +59,162 @@
     let isPaused = false;
     let isDebug = false;
 
+    // ==========================================
+    // 1.1 RNG determinista + dificultad (mejoras 6 y 8)
+    // ==========================================
+
+    // PRNG simple (Mulberry32) para modo determinista
+    function mulberry32(seed) {
+        let a = seed >>> 0;
+        return function() {
+            a += 0x6D2B79F5;
+            let t = a;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    let isDeterministic = false;
+    let rngSeed = 123456789;
+    let rng = mulberry32(rngSeed);
+
+    function setRngSeed(seed) {
+        rngSeed = (seed >>> 0);
+        rng = mulberry32(rngSeed);
+    }
+
+    function rand() {
+        return isDeterministic ? rng() : Math.random();
+    }
+
+    const DIFFICULTIES = {
+        easy: {
+            label: 'Fácil',
+            waveLengthFrames: 1200,
+            startInterval: 720,
+            endInterval: 360,
+            minInterval: 180,
+            jitter: 0.25,
+            baseChance: 0.65,
+            maxChance: 0.95,
+            maxMultiSpawn: 1,
+            zombieSpeedMult: 0.9,
+            zombieHealthMult: 0.95
+        },
+        normal: {
+            label: 'Normal',
+            waveLengthFrames: 1000,
+            startInterval: 650,
+            endInterval: 300,
+            minInterval: 150,
+            jitter: 0.30,
+            baseChance: 0.75,
+            maxChance: 0.98,
+            maxMultiSpawn: 2,
+            zombieSpeedMult: 1.0,
+            zombieHealthMult: 1.0
+        },
+        hard: {
+            label: 'Difícil',
+            waveLengthFrames: 900,
+            startInterval: 560,
+            endInterval: 240,
+            minInterval: 120,
+            jitter: 0.35,
+            baseChance: 0.85,
+            maxChance: 0.995,
+            maxMultiSpawn: 3,
+            zombieSpeedMult: 1.1,
+            zombieHealthMult: 1.05
+        }
+    };
+
+    let difficultyKey = 'normal';
+    function getDifficulty() {
+        return DIFFICULTIES[difficultyKey] || DIFFICULTIES.normal;
+    }
+
+    // Spawner de zombies (oleadas/progreso)
+    const zombieSpawnState = {
+        nextAt: 180,
+        wave: 0
+    };
+
+    function clamp(n, min, max) {
+        return Math.max(min, Math.min(max, n));
+    }
+
+    function getWave() {
+        const d = getDifficulty();
+        return Math.floor(frames / d.waveLengthFrames);
+    }
+
+    function computeZombieSpawnDelay() {
+        const d = getDifficulty();
+        const wave = getWave();
+        // Ramp simple en base a oleada (0..10)
+        const ramp = clamp(wave / 10, 0, 1);
+        const mean = d.startInterval + (d.endInterval - d.startInterval) * ramp;
+        const jitter = mean * d.jitter;
+        const offset = (rand() * 2 - 1) * jitter;
+        return Math.max(d.minInterval, Math.floor(mean + offset));
+    }
+
+    function countZombiesByRow() {
+        const counts = Array(ROWS).fill(0);
+        for (const z of zombies) {
+            if (z.action === 'die' || z.action === 'charred') continue;
+            counts[z.row]++;
+        }
+        return counts;
+    }
+
+    function pickSpawnRow() {
+        const counts = countZombiesByRow();
+        let min = Infinity;
+        for (let r = 0; r < ROWS; r++) min = Math.min(min, counts[r]);
+        const candidates = [];
+        for (let r = 0; r < ROWS; r++) {
+            if (counts[r] === min) candidates.push(r);
+        }
+
+        // 70%: filas con menos zombies, 30%: totalmente aleatorio
+        if (candidates.length > 0 && rand() < 0.7) {
+            return candidates[Math.floor(rand() * candidates.length)];
+        }
+        return Math.floor(rand() * ROWS);
+    }
+
+    function maybeSpawnZombies() {
+        if (frames < zombieSpawnState.nextAt) return;
+
+        const d = getDifficulty();
+        const wave = getWave();
+        const ramp = clamp(wave / 10, 0, 1);
+
+        const chance = d.baseChance + (d.maxChance - d.baseChance) * ramp;
+        const maxMulti = d.maxMultiSpawn;
+
+        // 1 spawn garantizado si pasa la probabilidad base; opcionalmente multi-spawn según oleada
+        if (rand() < chance) {
+            let spawns = 1;
+            // Multi-spawn aumenta con la oleada
+            for (let i = 1; i < maxMulti; i++) {
+                const extraChance = 0.10 + 0.20 * ramp; // 10% -> 30%
+                if (rand() < extraChance) spawns++;
+            }
+
+            for (let i = 0; i < spawns; i++) {
+                const row = pickSpawnRow();
+                zombies.push(new Zombie({ row, wave }));
+            }
+        }
+
+        zombieSpawnState.nextAt = frames + computeZombieSpawnDelay();
+        zombieSpawnState.wave = wave;
+    }
+
     // Grid
     const GRID_START_X = 90;
     const GRID_START_Y = 280;
@@ -202,9 +358,9 @@
 
     class Sun {
         constructor(x, y, isNatural = true) {
-            this.x = x || Math.random() * (GRID_END_X - GRID_START_X) + GRID_START_X;
-            this.y = y || -80;
-            this.finalY = isNatural ? (Math.random() * (GRID_END_Y - GRID_START_Y) + GRID_START_Y) : y;
+            this.x = (x ?? (rand() * (GRID_END_X - GRID_START_X) + GRID_START_X));
+            this.y = (y ?? -80);
+            this.finalY = isNatural ? (rand() * (GRID_END_Y - GRID_START_Y) + GRID_START_Y) : y;
             this.speed = 2; 
             this.frame = 0;
             this.totalFrames = assets.sunAnimation.length;
@@ -258,12 +414,25 @@
     }
 
     class Zombie {
-        constructor() {
-            this.row = Math.floor(Math.random() * ROWS);
+        constructor(opts = {}) {
+            const d = getDifficulty();
+            const wave = (opts.wave ?? getWave());
+            const ramp = clamp(wave / 10, 0, 1);
+
+            const row = (opts.row ?? Math.floor(rand() * ROWS));
+            this.row = clamp(row, 0, ROWS - 1);
+            this.spawnWave = wave;
+
             this.x = canvas.width + 50; 
             this.y = GRID_START_Y + (this.row * CELL_HEIGHT) + (CELL_HEIGHT / 2) - 40; 
-            this.speed = 0.6; 
-            this.health = 100;
+
+            // Escalado simple por dificultad + progreso
+            const waveSpeedMult = 1 + 0.15 * ramp;      // +0% -> +15%
+            const waveHealthMult = 1 + 0.20 * ramp;     // +0% -> +20%
+
+            this.speed = 0.6 * d.zombieSpeedMult * waveSpeedMult;
+            this.health = Math.round(100 * d.zombieHealthMult * waveHealthMult);
+
             this.scale = 0.35;
             this.frame = 0;
             this.action = 'walk'; 
@@ -511,12 +680,141 @@
     let mouseX = 0;
     let mouseY = 0;
 
+    // FPS (para panel debug)
+    let fps = 0;
+    let fpsSmoothed = 0;
+    let lastFrameTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+    function updateFps() {
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        const dt = now - lastFrameTime;
+        lastFrameTime = now;
+        if (dt <= 0) return;
+        const instant = 1000 / dt;
+        fpsSmoothed = fpsSmoothed ? (fpsSmoothed * 0.9 + instant * 0.1) : instant;
+        fps = fpsSmoothed;
+    }
+
+    function getGridCellFromPoint(x, y) {
+        if (x < GRID_START_X || x > GRID_END_X || y < GRID_START_Y || y > GRID_END_Y) return null;
+        const col = Math.floor((x - GRID_START_X) / CELL_WIDTH);
+        const row = Math.floor((y - GRID_START_Y) / CELL_HEIGHT);
+        if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return null;
+        return { col, row };
+    }
+
+    // Panel debug (mejora 8)
+    let debugClickRegions = [];
+
+    function drawDebugPanel() {
+        debugClickRegions = [];
+
+        const d = getDifficulty();
+        const wave = getWave();
+        const mouseCell = getGridCellFromPoint(mouseX, mouseY);
+
+        const x = canvas.width - 460;
+        const y = 10;
+        const w = 450;
+        const lineH = 22;
+        const pad = 10;
+
+        const lines = [
+            { text: `DEBUG (D)`, isHeader: true },
+            { text: `FPS: ${fps.toFixed(1)}` },
+            { text: `frames: ${frames}   wave: ${wave}` },
+            { text: `plants: ${plants.length}   zombies: ${zombies.length}   peas: ${peas.length}   suns: ${suns.length}` },
+            { text: `mouse: ${Math.round(mouseX)}, ${Math.round(mouseY)}   cell: ${mouseCell ? (mouseCell.col + ',' + mouseCell.row) : '—'}` },
+            { text: `dificultad (1/2/3): ${d.label}` },
+            { text: `pausa (P): ${isPaused ? 'ON' : 'OFF'}`, action: () => { isPaused = !isPaused; } },
+            { text: `determinista (T): ${isDeterministic ? 'ON' : 'OFF'}   seed: ${rngSeed}   (R:+1)`, action: () => { isDeterministic = !isDeterministic; setRngSeed(rngSeed); } }
+        ];
+
+        const h = pad * 2 + (lines.length * lineH);
+
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(x, y, w, h);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.strokeRect(x, y, w, h);
+
+        ctx.fillStyle = 'white';
+        ctx.font = '16px monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        let cy = y + pad;
+        for (const line of lines) {
+            if (line.isHeader) {
+                ctx.font = 'bold 16px monospace';
+            } else {
+                ctx.font = '16px monospace';
+            }
+
+            ctx.fillText(line.text, x + pad, cy);
+
+            if (line.action) {
+                // Región clickeable a lo ancho de la línea
+                debugClickRegions.push({
+                    x: x,
+                    y: cy,
+                    w: w,
+                    h: lineH,
+                    action: line.action
+                });
+                // Hint visual
+                ctx.strokeStyle = 'rgba(0,255,255,0.25)';
+                ctx.strokeRect(x + 2, cy + 2, w - 4, lineH - 4);
+            }
+
+            cy += lineH;
+        }
+
+        ctx.restore();
+    }
+
+    function handleDebugPanelClick(mx, my) {
+        for (const r of debugClickRegions) {
+            if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+                r.action();
+                return true;
+            }
+        }
+        return false;
+    }
+
     window.addEventListener('keydown', e => {
         if (e.key === 'd' || e.key === 'D') {
             isDebug = !isDebug;
         }
+
         if (e.key === 'p' || e.key === 'P') {
             isPaused = !isPaused;
+        }
+
+        // Dificultad (mejora 6)
+        if (e.key === '1') {
+            difficultyKey = 'easy';
+            zombieSpawnState.nextAt = Math.min(zombieSpawnState.nextAt, frames + 60);
+        }
+        if (e.key === '2') {
+            difficultyKey = 'normal';
+            zombieSpawnState.nextAt = Math.min(zombieSpawnState.nextAt, frames + 60);
+        }
+        if (e.key === '3') {
+            difficultyKey = 'hard';
+            zombieSpawnState.nextAt = Math.min(zombieSpawnState.nextAt, frames + 60);
+        }
+
+        // Determinismo (mejora 8)
+        if (e.key === 't' || e.key === 'T') {
+            isDeterministic = !isDeterministic;
+            setRngSeed(rngSeed);
+        }
+        if (e.key === 'r' || e.key === 'R') {
+            setRngSeed(rngSeed + 1);
         }
     });
 
@@ -533,11 +831,14 @@
     });
 
     canvas.addEventListener('mousedown', e => {
-        if (gameOver || isPaused) return;
-
         const pos = getMousePos(e);
         const mx = pos.x;
         const my = pos.y;
+
+        // Clicks en panel debug (permitido incluso en pausa / game over)
+        if (isDebug && handleDebugPanelClick(mx, my)) return;
+
+        if (gameOver || isPaused) return;
 
         // Recoger Soles
         for (let i = suns.length - 1; i >= 0; i--) {
@@ -638,6 +939,7 @@
 
     function drawGame() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        updateFps();
 
         // UPDATE
         if (!isPaused && !gameOver) {
@@ -654,7 +956,7 @@
             suns = suns.filter(s => !s.markedForDeletion);
 
             if (frames % 350 === 0) suns.push(new Sun()); 
-            if (frames % 600 === 0) zombies.push(new Zombie()); 
+            maybeSpawnZombies();
 
             checkCollisions();
             frames++;
@@ -751,6 +1053,9 @@
                 ctx.globalAlpha = 1;
             }
         }
+
+        // Debug overlay por encima de todo
+        if (isDebug) drawDebugPanel();
 
         requestAnimationFrame(drawGame);
     }
