@@ -59,6 +59,9 @@
     let isPaused = false;
     let isDebug = false;
 
+    // Debug: activar/desactivar el tiempo de recarga (cooldown) de las semillas
+    let isSeedCooldownEnabled = true;
+
     // ==========================================
     // 1.1 RNG determinista + dificultad (mejoras 6 y 8)
     // ==========================================
@@ -727,7 +730,18 @@
             { text: `mouse: ${Math.round(mouseX)}, ${Math.round(mouseY)}   cell: ${mouseCell ? (mouseCell.col + ',' + mouseCell.row) : '—'}` },
             { text: `dificultad (1/2/3): ${d.label}` },
             { text: `pausa (P): ${isPaused ? 'ON' : 'OFF'}`, action: () => { isPaused = !isPaused; } },
-            { text: `determinista (T): ${isDeterministic ? 'ON' : 'OFF'}   seed: ${rngSeed}   (R:+1)`, action: () => { isDeterministic = !isDeterministic; setRngSeed(rngSeed); } }
+            { text: `determinista (T): ${isDeterministic ? 'ON' : 'OFF'}   seed: ${rngSeed}   (R:+1)`, action: () => { isDeterministic = !isDeterministic; setRngSeed(rngSeed); } },
+            {
+                text: `recarga semillas: ${isSeedCooldownEnabled ? 'ON' : 'OFF'}`,
+                toggleValue: isSeedCooldownEnabled,
+                action: () => {
+                    isSeedCooldownEnabled = !isSeedCooldownEnabled;
+                    if (!isSeedCooldownEnabled) {
+                        // Si se desactiva el cooldown, liberamos inmediatamente todas las semillas
+                        seeds.forEach(s => { s.timer = 0; });
+                    }
+                }
+            }
         ];
 
         const h = pad * 2 + (lines.length * lineH);
@@ -745,6 +759,38 @@
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
 
+        function drawRoundedRect(px, py, pw, ph, r) {
+            const rr = Math.min(r, pw / 2, ph / 2);
+            ctx.beginPath();
+            ctx.moveTo(px + rr, py);
+            ctx.arcTo(px + pw, py, px + pw, py + ph, rr);
+            ctx.arcTo(px + pw, py + ph, px, py + ph, rr);
+            ctx.arcTo(px, py + ph, px, py, rr);
+            ctx.arcTo(px, py, px + pw, py, rr);
+            ctx.closePath();
+        }
+
+        function drawSwitch(px, py, on) {
+            const sw = 46;
+            const sh = 22;
+            const r = sh / 2;
+
+            ctx.save();
+            ctx.fillStyle = on ? 'rgba(46, 204, 113, 0.9)' : 'rgba(140, 140, 140, 0.9)';
+            drawRoundedRect(px, py, sw, sh, r);
+            ctx.fill();
+
+            const knobR = r - 2;
+            const knobCx = on ? (px + sw - r) : (px + r);
+            const knobCy = py + r;
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(knobCx, knobCy, knobR, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
         let cy = y + pad;
         for (const line of lines) {
             if (line.isHeader) {
@@ -754,6 +800,15 @@
             }
 
             ctx.fillText(line.text, x + pad, cy);
+
+            // Toggle estilo switch (visual)
+            if (typeof line.toggleValue === 'boolean') {
+                const sw = 46;
+                const sh = 22;
+                const sx = x + w - pad - sw;
+                const sy = cy + Math.floor((lineH - sh) / 2);
+                drawSwitch(sx, sy, line.toggleValue);
+            }
 
             if (line.action) {
                 // Región clickeable a lo ancho de la línea
@@ -886,7 +941,7 @@
                     plants.push(new Plant(selectedSeed.name, col, row));
                     gridState[col][row] = selectedSeed.name; 
                     sunAmount -= selectedSeed.cost;
-                    seeds[selectedSeed.index].timer = seeds[selectedSeed.index].cooldown;
+                    seeds[selectedSeed.index].timer = isSeedCooldownEnabled ? seeds[selectedSeed.index].cooldown : 0;
                     selectedSeed = null; 
                 }
                 return;
@@ -899,7 +954,7 @@
         const h = assets.extras.envoltura ? assets.extras.envoltura.height : 140;
         seeds.forEach((seed, index) => {
             if (mx >= currentX && mx <= currentX + w && my >= 20 && my <= 20 + h) {
-                if (sunAmount >= seed.cost && seed.timer <= 0) {
+                if (sunAmount >= seed.cost && (!isSeedCooldownEnabled || seed.timer <= 0)) {
                     selectedSeed = { ...seed, index: index };
                     isShovelActive = false;
                 }
@@ -943,7 +998,12 @@
 
         // UPDATE
         if (!isPaused && !gameOver) {
-            seeds.forEach(s => { if (s.timer > 0) s.timer--; });
+            if (isSeedCooldownEnabled) {
+                seeds.forEach(s => { if (s.timer > 0) s.timer--; });
+            } else {
+                // Mantener todo disponible cuando el cooldown está desactivado
+                seeds.forEach(s => { s.timer = 0; });
+            }
             lawnmowers.forEach(lm => lm.update());
             plants.forEach(p => p.update());
             zombies.forEach(z => z.update());
@@ -991,7 +1051,7 @@
             ctx.fillText(s.cost, curX + wrW/2, 183);
             ctx.globalAlpha = 1;
 
-            if (s.timer > 0) {
+            if (isSeedCooldownEnabled && s.timer > 0) {
                 const ratio = s.timer / s.cooldown; 
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
                 ctx.fillRect(curX, 20, wrW, wrH * ratio);
