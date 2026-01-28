@@ -19,9 +19,85 @@
             max-height: 100vh;
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
         }
+
+        /* ==========================================
+         * Debug UI (switch)
+         * ========================================== */
+        .debug-controls {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 20;
+            color: #fff;
+            font-family: monospace;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 10px 12px;
+            backdrop-filter: blur(3px);
+        }
+        .debug-controls__row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        /* Switch tomado del patrón clásico "toggle" */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.25);
+            transition: 0.15s;
+            border-radius: 999px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.15s;
+            border-radius: 999px;
+        }
+        .switch input:checked + .slider {
+            background-color: rgba(0, 200, 255, 0.55);
+        }
+        .switch input:checked + .slider:before {
+            transform: translateX(20px);
+        }
     </style>
 </head>
 <body>
+
+    <div id="debugControls" class="debug-controls" hidden>
+        <div class="debug-controls__row">
+            <span>Cooldown semillas</span>
+            <label class="switch">
+                <input id="seedCooldownToggle" type="checkbox" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
 
     <canvas id="gameCanvas" width="1636" height="1332"></canvas>
 
@@ -58,6 +134,35 @@
 
     let isPaused = false;
     let isDebug = false;
+
+    // ==========================================
+    // 1.0 Debug UI (switch para cooldown de semillas)
+    // ==========================================
+    const debugControlsEl = document.getElementById('debugControls');
+    const seedCooldownToggleEl = document.getElementById('seedCooldownToggle');
+
+    // Si está OFF, las semillas quedan disponibles inmediatamente (sin recarga/cooldown)
+    let isSeedCooldownEnabled = true;
+
+    function syncDebugControls() {
+        if (debugControlsEl) debugControlsEl.hidden = !isDebug;
+        if (seedCooldownToggleEl) seedCooldownToggleEl.checked = isSeedCooldownEnabled;
+    }
+
+    function setSeedCooldownEnabled(enabled) {
+        isSeedCooldownEnabled = !!enabled;
+        if (!isSeedCooldownEnabled) {
+            // Al desactivar, limpiamos cualquier recarga en curso
+            seeds.forEach(s => { s.timer = 0; });
+        }
+        syncDebugControls();
+    }
+
+    if (seedCooldownToggleEl) {
+        seedCooldownToggleEl.addEventListener('change', () => {
+            setSeedCooldownEnabled(seedCooldownToggleEl.checked);
+        });
+    }
 
     // ==========================================
     // 1.1 RNG determinista + dificultad (mejoras 6 y 8)
@@ -727,6 +832,7 @@
             { text: `mouse: ${Math.round(mouseX)}, ${Math.round(mouseY)}   cell: ${mouseCell ? (mouseCell.col + ',' + mouseCell.row) : '—'}` },
             { text: `dificultad (1/2/3): ${d.label}` },
             { text: `pausa (P): ${isPaused ? 'ON' : 'OFF'}`, action: () => { isPaused = !isPaused; } },
+            { text: `cooldown semillas (switch): ${isSeedCooldownEnabled ? 'ON' : 'OFF'}`, action: () => { setSeedCooldownEnabled(!isSeedCooldownEnabled); } },
             { text: `determinista (T): ${isDeterministic ? 'ON' : 'OFF'}   seed: ${rngSeed}   (R:+1)`, action: () => { isDeterministic = !isDeterministic; setRngSeed(rngSeed); } }
         ];
 
@@ -788,6 +894,7 @@
     window.addEventListener('keydown', e => {
         if (e.key === 'd' || e.key === 'D') {
             isDebug = !isDebug;
+            syncDebugControls();
         }
 
         if (e.key === 'p' || e.key === 'P') {
@@ -886,7 +993,7 @@
                     plants.push(new Plant(selectedSeed.name, col, row));
                     gridState[col][row] = selectedSeed.name; 
                     sunAmount -= selectedSeed.cost;
-                    seeds[selectedSeed.index].timer = seeds[selectedSeed.index].cooldown;
+                    seeds[selectedSeed.index].timer = isSeedCooldownEnabled ? seeds[selectedSeed.index].cooldown : 0;
                     selectedSeed = null; 
                 }
                 return;
@@ -899,7 +1006,7 @@
         const h = assets.extras.envoltura ? assets.extras.envoltura.height : 140;
         seeds.forEach((seed, index) => {
             if (mx >= currentX && mx <= currentX + w && my >= 20 && my <= 20 + h) {
-                if (sunAmount >= seed.cost && seed.timer <= 0) {
+                if (sunAmount >= seed.cost && (!isSeedCooldownEnabled || seed.timer <= 0)) {
                     selectedSeed = { ...seed, index: index };
                     isShovelActive = false;
                 }
@@ -943,7 +1050,9 @@
 
         // UPDATE
         if (!isPaused && !gameOver) {
-            seeds.forEach(s => { if (s.timer > 0) s.timer--; });
+            if (isSeedCooldownEnabled) {
+                seeds.forEach(s => { if (s.timer > 0) s.timer--; });
+            }
             lawnmowers.forEach(lm => lm.update());
             plants.forEach(p => p.update());
             zombies.forEach(z => z.update());
@@ -991,7 +1100,7 @@
             ctx.fillText(s.cost, curX + wrW/2, 183);
             ctx.globalAlpha = 1;
 
-            if (s.timer > 0) {
+            if (isSeedCooldownEnabled && s.timer > 0) {
                 const ratio = s.timer / s.cooldown; 
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
                 ctx.fillRect(curX, 20, wrW, wrH * ratio);
